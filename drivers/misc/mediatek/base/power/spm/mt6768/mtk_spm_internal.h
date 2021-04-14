@@ -321,5 +321,6 @@ int is_spm_enabled(void);
  ***********************************************************/
 extern struct spm_lp_scen __spm_suspend;
 
+extern const char *wakesrc_str[32];
 
 #endif /* __MTK_SPM_INTERNAL_H__ */

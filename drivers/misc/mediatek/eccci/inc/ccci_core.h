@@ -277,6 +277,21 @@ extern struct ccci_ccb_config ccb_configs[];
 #define CCCI_IOC_CCB_CTRL_INFO			\
 	_IOWR(CCCI_IOC_MAGIC, 71, struct ccb_ctrl_info)
 
+/* for user space ccci mdinit user */
+#define CCCI_IOC_GET_MDINIT_KILLED      \
+	_IOR(CCCI_IOC_MAGIC, 72, unsigned int)
+
+
+/* modem log */
+#define CCCI_IOC_ENTER_UPLOAD		\
+	_IO(CCCI_IOC_MAGIC, 73)
+
+#define CCCI_IOC_DRV_ENTER_UPLOAD	\
+	_IO(CCCI_IOC_MAGIC, 74) /* modem log for s */
+
+#define CCCI_IOC_LOG_LVL	\
+	_IOW(CCCI_IOC_MAGIC, 75, unsigned int) /* modem log for s */
+
 #define CCCI_IOC_SET_HEADER			\
 	_IO(CCCI_IOC_MAGIC,  112) /* emcs_va */
 #define CCCI_IOC_CLR_HEADER			\
@@ -491,6 +506,13 @@ enum CCCI_CH {
 	CCCI_DISP_RX			= 183,
 	CCCI_DISP_TX			= 184,
 
+	CCCI_RIL_IPC0_RX		= 193,
+	CCCI_RIL_IPC0_TX		= 194,
+	CCCI_RIL_IPC1_RX		= 195,
+	CCCI_RIL_IPC1_TX		= 196,
+
+	CCCI_VT_CTL_RX			= 197,
+	CCCI_VT_CTL_TX			= 198,
 
 	CCCI_C2K_PPP_DATA, /* data ch for c2k */
 
@@ -592,4 +614,5 @@ int ccci_get_adc_val(void);
 #ifdef FEATURE_SCP_CCCI_SUPPORT
 extern void fsm_scp_init0(void);
 #endif
+void drv_tri_panic_by_lvl(int md_id);
 #endif	/* __CCCI_CORE_H__ */

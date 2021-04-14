@@ -256,7 +256,7 @@ static unsigned int spm_output_wake_reason(unsigned int ex_flag
 		NULL, 0);
 #endif
 #endif
-	log_wakeup_reason(mtk_spm_get_irq_0());
+	log_wakeup_reason_spm(mtk_spm_get_irq_0(), wakesta->r12, wakesta->assert_pc);
 
 	return wr;
 }

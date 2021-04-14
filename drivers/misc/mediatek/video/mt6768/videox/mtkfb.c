@@ -269,6 +269,9 @@ static int mtkfb_blank(int blank_mode, struct fb_info *info)
 {
 	enum mtkfb_power_mode prev_pm = primary_display_get_power_mode();
 
+	pr_info("%s + blank_mode: %d, %s\n",
+			__func__, blank_mode, blank_mode == FB_BLANK_UNBLANK ? "UNBLANK" : "POWERDOWN");
+
 	switch (blank_mode) {
 	case FB_BLANK_UNBLANK:
 	case FB_BLANK_NORMAL:
@@ -304,6 +307,8 @@ static int mtkfb_blank(int blank_mode, struct fb_info *info)
 	default:
 		return -EINVAL;
 	}
+
+	pr_info("%s - blank_mode: %d\n", __func__, blank_mode);
 
 	return 0;
 }
@@ -1121,7 +1126,15 @@ static int mtkfb_ioctl(struct fb_info *info, unsigned int cmd,
 		enum mtkfb_aod_power_mode aod_pm = MTKFB_AOD_POWER_MODE_ERROR;
 
 		aod_pm = (enum mtkfb_aod_power_mode)arg;
+#if defined(CONFIG_SMCDSD_PANEL)
+		if (aod_pm == MTKFB_AOD_DOZE || aod_pm == MTKFB_AOD_DOZE_SUSPEND)
+			smcdsd_simple_notifier_call_chain(SMCDSD_EARLY_EVENT_DOZE, (aod_pm == MTKFB_AOD_DOZE) ? FB_BLANK_UNBLANK : FB_BLANK_POWERDOWN);
+#endif
 		ret = mtkfb_aod_mode_switch(arg);
+#if defined(CONFIG_SMCDSD_PANEL)
+		if (aod_pm == MTKFB_AOD_DOZE || aod_pm == MTKFB_AOD_DOZE_SUSPEND)
+			smcdsd_simple_notifier_call_chain(SMCDSD_EVENT_DOZE, (aod_pm == MTKFB_AOD_DOZE) ? FB_BLANK_UNBLANK : FB_BLANK_POWERDOWN);
+#endif
 
 		break;
 	}
@@ -2629,7 +2642,7 @@ static int mtkfb_probe(struct platform_device *pdev)
 	}
 	init_state++;		/* 4 */
 	DISPMSG("\nmtkfb_fbinfo_init done\n");
-
+#if !defined(CONFIG_SMCDSD_PANEL)
 	if (disp_helper_get_stage() == DISP_HELPER_STAGE_NORMAL) {
 		/* dal_init should after mtkfb_fbinfo_init, otherwise layer
 		 * 3 will show dal background color
@@ -2644,7 +2657,7 @@ static int mtkfb_probe(struct platform_device *pdev)
 		ret = DAL_Init(fbVA, fbPA);
 		DISPMSG("DAL_Init done\n");
 	}
-
+#endif
 	if (disp_helper_get_stage() != DISP_HELPER_STAGE_NORMAL)
 		_mtkfb_internal_test((unsigned long)(fbdev->fb_va_base),
 			MTK_FB_XRES, MTK_FB_YRES);
@@ -2691,7 +2704,7 @@ static int mtkfb_probe(struct platform_device *pdev)
 	fbdev->state = MTKFB_ACTIVE;
 
 	if (!strcmp(mtkfb_find_lcm_driver(),
-		"nt35521_hd_dsi_vdo_truly_rt5081_drv")) {
+		"ea8076g_fhdplus_dis_cmd_drv")) {
 		register_ccci_sys_call_back(MD_SYS1,
 			MD_DISPLAY_DYNAMIC_MIPI, mipi_clk_change);
 	}
@@ -2747,6 +2760,39 @@ static int mtkfb_resume(struct platform_device *pdev)
 	return 0;
 }
 
+#if defined(CONFIG_SMCDSD_PANEL)
+static void mtkfb_shutdown(struct platform_device *pdev)
+{
+	enum mtkfb_power_mode prev_pm = primary_display_get_power_mode();
+	struct mtkfb_device *fbdev = dev_get_drvdata(&pdev->dev);
+
+	DISPMSG("%s: ++\n", __func__);
+	MTKFB_LOG("[FB Driver] %s()\n", __func__);
+	pr_info("%s: ++\n", __func__);
+
+	if (!lock_fb_info((fbdev->fb_info))) {
+		MTKFB_LOG("%s: fblock is failed\n", __func__);
+		return;
+	}
+
+	if (primary_display_is_sleepd()) {
+		MTKFB_LOG("mtkfb has been power off\n");
+		unlock_fb_info(fbdev->fb_info);
+		return;
+	}
+	smcdsd_simple_notifier_call_chain(FB_EARLY_EVENT_BLANK, FB_BLANK_POWERDOWN);
+	primary_display_set_power_mode(FB_SUSPEND);
+	primary_display_suspend();
+
+	debug_print_power_mode_check(prev_pm, FB_SUSPEND);
+	smcdsd_simple_notifier_call_chain(FB_EVENT_BLANK, FB_BLANK_POWERDOWN);
+	unlock_fb_info(fbdev->fb_info);
+
+	pr_info("%s: --\n", __func__);
+	MTKFB_LOG("[FB Driver] leave %s\n", __func__);
+	DISPMSG("%s: --\n", __func__);
+}
+#else
 static void mtkfb_shutdown(struct platform_device *pdev)
 {
 	MTKFB_LOG("[FB Driver] %s()\n", __func__);
@@ -2759,6 +2805,7 @@ static void mtkfb_shutdown(struct platform_device *pdev)
 	primary_display_suspend();
 	MTKFB_LOG("[FB Driver] leave %s\n", __func__);
 }
+#endif
 
 bool mtkfb_is_suspend(void)
 {

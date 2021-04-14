@@ -1113,6 +1113,7 @@ static void init_sched_groups_energy(int cpu, struct sched_domain *sd,
 #endif
 		if (energy_eff(sge, i) > energy_eff(sge, i+1))
 			continue;
+#ifndef CONFIG_SEC_PM
 #ifdef CONFIG_SCHED_DEBUG
 		pr_warn("WARN: cpu=%d, domain=%s: incr. energy eff %lu[%d]->%lu[%d]\n",
 			cpu, sd->name, energy_eff(sge, i), i,
@@ -1120,6 +1121,7 @@ static void init_sched_groups_energy(int cpu, struct sched_domain *sd,
 #else
 		pr_warn("WARN: cpu=%d: incr. energy eff %lu[%d]->%lu[%d]\n",
 			cpu, energy_eff(sge, i), i, energy_eff(sge, i+1), i+1);
+#endif
 #endif
 	}
 

@@ -3,6 +3,7 @@ menu "USB Power Delivery and Type-C drivers"
 
 config TYPEC
 	tristate
+	default y
 
 config TYPEC_WCOVE
 	tristate "Intel WhiskeyCove PMIC USB Type-C PHY driver"
@@ -20,5 +21,11 @@ config TYPEC_WCOVE
 	  called typec_wcove
 
 source "drivers/usb/typec/ucsi/Kconfig"
+
+source "drivers/usb/typec/manager/Kconfig"
+
+source "drivers/usb/typec/common/Kconfig"
+
+source "drivers/usb/typec/slsi/Kconfig"
 
 endmenu

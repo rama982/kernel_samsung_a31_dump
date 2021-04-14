@@ -352,6 +352,9 @@ static void deinit_cmdq_slots(cmdqBackupSlotHandle hSlot)
 		return 0;
 	}
  */
+
+extern int m4u_sec_init(void);
+
 int ovl2mem_init(unsigned int session)
 {
 	int ret = -1;
@@ -395,7 +398,7 @@ int ovl2mem_init(unsigned int session)
 	}
 	/* Set fake cmdq engineflag for judge path scenario */
 	cmdqRecSetEngine(pgcl->cmdq_handle_config,
-		(1LL << CMDQ_ENG_DISP_2L_OVL1) | (1LL << CMDQ_ENG_DISP_WDMA0));
+		(1LL << CMDQ_ENG_DISP_2L_OVL0) | (1LL << CMDQ_ENG_DISP_WDMA0));
 
 	cmdqRecReset(pgcl->cmdq_handle_config);
 	cmdqRecClearEventToken(pgcl->cmdq_handle_config,
@@ -416,8 +419,10 @@ int ovl2mem_init(unsigned int session)
 	dpmgr_path_init(pgcl->dpmgr_handle, CMDQ_DISABLE);
 	dpmgr_path_reset(pgcl->dpmgr_handle, CMDQ_DISABLE);
 
+	m4u_sec_init();
+
 #if defined(CONFIG_MTK_M4U)
-	sPort.ePortID = M4U_PORT_UNKNOWN; /* modify to real module*/
+	sPort.ePortID = M4U_PORT_DISP_2L_OVL0_LARB0; /* modify to real module*/
 	sPort.Virtuality = ovl2mem_use_m4u;
 	sPort.Security = 0;
 	sPort.Distance = 1;
@@ -425,11 +430,11 @@ int ovl2mem_init(unsigned int session)
 	ret = m4u_config_port(&sPort);
 	if (ret == 0) {
 		DISPDBG("config M4U Port %s to %s SUCCESS\n",
-			  ddp_get_module_name(DISP_MODULE_OVL1_2L),
+			  ddp_get_module_name(DISP_MODULE_OVL0_2L),
 			  ovl2mem_use_m4u ? "virtual" : "physical");
 	} else {
 		DISPERR("config M4U Port %s to %s FAIL(ret=%d)\n",
-			  ddp_get_module_name(DISP_MODULE_OVL1_2L),
+			  ddp_get_module_name(DISP_MODULE_OVL0_2L),
 			  ovl2mem_use_m4u ? "virtual" : "physical", ret);
 		goto Exit;
 	}
@@ -453,7 +458,7 @@ int ovl2mem_init(unsigned int session)
 #endif
 	dpmgr_enable_event(pgcl->dpmgr_handle, DISP_PATH_EVENT_FRAME_COMPLETE);
 
-	pgcl->max_layer = 4;
+	pgcl->max_layer = 2;
 	pgcl->state = 1;
 	pgcl->session = session;
 	atomic_set(&g_trigger_ticket, 1);

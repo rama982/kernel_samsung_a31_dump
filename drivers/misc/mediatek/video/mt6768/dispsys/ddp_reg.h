@@ -230,16 +230,44 @@ static inline unsigned long disp_addr_convert(unsigned long va)
 
 #define DISP_REG_CMDQ_POLLING(handle, reg32, val, mask) \
 	do { \
+		int i = 0; \
 		if (handle == NULL) { \
-			while ((DISP_REG_GET(reg32) & (mask)) != \
-				((val) & (mask)))\
-				; \
+			while ((DISP_REG_GET(reg32) & (mask)) \
+				!= ((val) & (mask)))\
+				if (i < 500) {  \
+					i++; \
+				} \
+				else { \
+					break; \
+				} \
 		} else { \
 			cmdqRecPoll(handle, \
 				disp_addr_convert((unsigned long)(reg32)), \
 				val, mask); \
 		}  \
 	} while (0)
+
+#if defined(CONFIG_SMCDSD_PANEL)
+#define DISP_REG_CMDQ_POLLING_ONLY_RX(handle, reg32, val, mask) \
+	do { \
+		int i = 0; \
+		if (handle == NULL) { \
+ 			while ((DISP_REG_GET(reg32) & (mask)) != ((val) & (mask)))	{\
+				if (i < 1000) {  \
+					i++; \
+					udelay(1);	\
+				} \
+				else { \
+					break; \
+				} \
+			}	\
+			if (i >= 1000)	\
+				pr_info("%s: %d\n", __func__, i);	\
+		} else { \
+			cmdqRecPoll(handle, disp_addr_convert((unsigned long)(reg32)), val, mask); \
+		}  \
+	} while (0)
+#endif
 
 #define DISP_REG_BACKUP(handle, hSlot, idx, reg32) \
 	do { \

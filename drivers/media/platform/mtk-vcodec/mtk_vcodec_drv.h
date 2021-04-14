@@ -42,6 +42,7 @@
 #define MTK_V4L2_BENCHMARK      0
 #define WAIT_INTR_TIMEOUT_MS    500
 #define SUSPEND_TIMEOUT_CNT     5000
+#define MTK_MAX_CTRLS_HINT      64
 
 /**
  * enum mtk_instance_type - The type of an MTK Vcodec instance.
@@ -87,6 +88,7 @@ enum mtk_encode_param {
 	MTK_ENCODE_PARAM_BITRATE_MODE = (1 << 11),
 	MTK_ENCODE_PARAM_ROI_ON = (1 << 12),
 	MTK_ENCODE_PARAM_GRID_SIZE = (1 << 13),
+	MTK_ENCODE_PARAM_SEC_ENCODE = (1 << 14)
 };
 
 /*
@@ -161,7 +163,7 @@ struct mtk_dec_params {
 	unsigned int	nal_size_length;
 	unsigned int	svp_mode;
 	unsigned int	operating_rate;
-	u64	timestamp;
+	unsigned int	timestamp;
 	unsigned int	total_frame_bufq_count;
 	unsigned int	queued_frame_buf_count;
 };
@@ -210,6 +212,10 @@ struct mtk_enc_params {
 	unsigned int    heif_grid_size;
 	unsigned int    max_w;
 	unsigned int    max_h;
+	unsigned int    svp_mode;
+	unsigned int    i_qp;
+	unsigned int    p_qp;
+	unsigned int    b_qp;
 };
 
 /*
@@ -252,6 +258,10 @@ struct venc_enc_param {
 	unsigned int sizeimage[MTK_VCODEC_MAX_PLANES];
 	unsigned int max_w;
 	unsigned int max_h;
+	unsigned int svp_mode;
+	unsigned int i_qp;
+	unsigned int p_qp;
+	unsigned int b_qp;
 };
 
 /*
@@ -262,7 +272,7 @@ struct venc_enc_param {
 struct venc_frm_buf {
 	struct mtk_vcodec_mem fb_addr[MTK_VCODEC_MAX_PLANES];
 	unsigned int num_planes;
-	u64 timestamp;
+	unsigned long timestamp;
 	unsigned int roimap;
 };
 
@@ -332,8 +342,6 @@ struct mtk_vcodec_ctx {
 	struct vdec_pic_info picinfo;
 	int dpb_size;
 	int last_dpb_size;
-	int is_hdr;
-	int last_is_hdr;
 	unsigned int errormap_info[VB2_MAX_FRAME];
 	u64 input_max_ts;
 

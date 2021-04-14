@@ -21,6 +21,8 @@
 #define MAX_SUSPEND_ABORT_LEN 256
 
 void log_wakeup_reason(int irq);
+void log_wakeup_reason_spm(int irq, unsigned int wakesta_r12,
+			unsigned int assert_pc);
 int check_wakeup_reason(int irq);
 
 #ifdef CONFIG_SUSPEND

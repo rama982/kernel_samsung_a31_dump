@@ -420,7 +420,7 @@ RESTORE_UART:
 }
 
 /* Migrate from mtk_idle_profile.c */
-#define idle_block_log_time_criteria	5000
+#define idle_block_log_time_criteria	10000 /* 10 sec */
 static DEFINE_SPINLOCK(idle_blocking_spin_lock);
 static unsigned long long idle_block_log_prev_time;
 bool mtk_idle_select_state(int type, int reason)

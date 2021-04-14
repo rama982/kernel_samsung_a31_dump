@@ -67,9 +67,6 @@ static void do_register_otg_work(struct work_struct *data)
 #endif
 #endif
 
-static void mt_usb_host_connect(int delay);
-static void mt_usb_host_disconnect(int delay);
-
 #ifdef CONFIG_MTK_CHARGER
 #if CONFIG_MTK_GAUGE_VERSION == 30
 #include <mt-plat/charger_class.h>

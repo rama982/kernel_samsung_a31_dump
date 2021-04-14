@@ -39,10 +39,12 @@ enum {
 	MT6768_DAI_PCM_2,
 	MT6768_DAI_HOSTLESS_LPBK,
 	MT6768_DAI_HOSTLESS_FM,
+	MT6768_DAI_HOSTLESS_FM_RECORD,
 	MT6768_DAI_HOSTLESS_SPEECH,
 	MT6768_DAI_HOSTLESS_SPH_ECHO_REF,
 	MT6768_DAI_HOSTLESS_SPK_INIT,
 	MT6768_DAI_HOSTLESS_IMPEDANCE,
+	MT6768_DAI_HOSTLESS_ADDA_DL_HWGain,
 	MT6768_DAI_HOSTLESS_UL1,
 	MT6768_DAI_HOSTLESS_UL2,
 	MT6768_DAI_HOSTLESS_UL3,
@@ -170,6 +172,7 @@ struct mt6768_afe_private {
 	int speech_shm_init;
 	int speech_shm_usip;
 	int speech_shm_widx;
+	int speech_cust_param_init;
 };
 
 int mt6768_dai_adda_register(struct mtk_base_afe *afe);

@@ -19,9 +19,74 @@
 
 #include "kd_camera_typedef.h"
 #include "kd_camera_feature.h"
-
+#include "kd_imgsensor.h"
 
 #include "imgsensor_hw.h"
+
+int system_hw_rev = -1;
+static int board_rev_setup(char *str)
+{
+	int n;
+	if (!get_option(&str, &n)) {
+		pr_err("%s:fail \n", __func__);
+		return -1;
+	}
+
+	system_hw_rev = n;
+	return 0;
+}
+__setup("androidboot.revision=", board_rev_setup);
+
+int get_hw_board_version(void)
+{
+	return system_hw_rev;
+}
+
+struct IMGSENSOR_HW_CFG *get_custom_power_cfg(void)
+{
+	int i=0, config_rev = -1;
+	struct IMGSENSOR_HW_CFG *config = NULL;
+	int rev = get_hw_board_version();
+	for(i=0; NULL != imgsensor_custom_config_hw_list[i].p_imgsensor_custom_config_hw; ++i) {
+		if(rev < imgsensor_custom_config_hw_list[i].revison)
+			break;
+		config_rev = imgsensor_custom_config_hw_list[i].revison;
+		config = imgsensor_custom_config_hw_list[i].p_imgsensor_custom_config_hw;
+	}
+
+	pr_info("%s: selected power config revision=%d, config=%p", __func__, config_rev, config);
+	return config;
+}
+
+struct IMGSENSOR_HW_POWER_SEQ *get_platform_pwr_seq(void)
+{
+	struct IMGSENSOR_HW_POWER_SEQ *config = NULL;
+	switch (get_hw_board_version()) {
+	case 0:
+		config = platform_power_sequence;
+		break;
+	case 1: // falling through
+	default:
+		config = platform_power_sequence;
+		break;
+	}
+	return config;
+}
+
+struct IMGSENSOR_HW_POWER_SEQ *get_sensor_pwr_seq(void)
+{
+	struct IMGSENSOR_HW_POWER_SEQ *config = NULL;
+	switch (get_hw_board_version()) {
+	case 0:
+		config = sensor_power_sequence;
+		break;
+	case 1: // falling through
+	default:
+		config = sensor_power_sequence;
+		break;
+	}
+	return config;
+}
 
 enum IMGSENSOR_RETURN imgsensor_hw_release_all(struct IMGSENSOR_HW *phw)
 {
@@ -54,7 +119,7 @@ enum IMGSENSOR_RETURN imgsensor_hw_init(struct IMGSENSOR_HW *phw)
 	for (i = 0; i < IMGSENSOR_SENSOR_IDX_MAX_NUM; i++) {
 		psensor_pwr = &phw->sensor_pwr[i];
 
-		pcust_pwr_cfg = imgsensor_custom_config;
+		pcust_pwr_cfg = get_custom_power_cfg();
 		while (pcust_pwr_cfg->sensor_idx != i &&
 		       pcust_pwr_cfg->sensor_idx != IMGSENSOR_SENSOR_IDX_NONE)
 			pcust_pwr_cfg++;
@@ -144,7 +209,8 @@ static enum IMGSENSOR_RETURN imgsensor_hw_power_sequence(
 				    ppwr_info->pin,
 				    ppwr_info->pin_state_on);
 
-			mdelay(ppwr_info->pin_on_delay);
+				if (ppwr_info->pin_on_delay)
+					mDELAY(ppwr_info->pin_on_delay);
 		}
 
 		ppwr_info++;
@@ -159,7 +225,9 @@ static enum IMGSENSOR_RETURN imgsensor_hw_power_sequence(
 			if (ppwr_info->pin != IMGSENSOR_HW_PIN_UNDEF) {
 				pdev =
 				    phw->pdev[psensor_pwr->id[ppwr_info->pin]];
-				mdelay(ppwr_info->pin_on_delay);
+
+				if (ppwr_info->pin_on_delay)
+					mDELAY(ppwr_info->pin_on_delay);
 
 				if (pdev->set != NULL)
 					pdev->set(
@@ -172,8 +240,10 @@ static enum IMGSENSOR_RETURN imgsensor_hw_power_sequence(
 	}
 
 	/* wait for power stable */
+/*
 	if (pwr_status == IMGSENSOR_HW_POWER_STATUS_ON)
 		mdelay(5);
+*/
 	return IMGSENSOR_RETURN_SUCCESS;
 }
 
@@ -187,7 +257,8 @@ enum IMGSENSOR_RETURN imgsensor_hw_power(
 	char str_index[LENGTH_FOR_SNPRINTF];
 
 	pr_info(
-		"sensor_idx %d, power %d curr_sensor_name %s, enable list %s\n",
+		"HW rev: %d, sensor_idx %d, power %d curr_sensor_name %s, enable list %s\n",
+		get_hw_board_version(),
 		sensor_idx,
 		pwr_status,
 		curr_sensor_name,
@@ -199,21 +270,40 @@ enum IMGSENSOR_RETURN imgsensor_hw_power(
 	!strstr(phw->enable_sensor_by_index[sensor_idx], curr_sensor_name))
 		return IMGSENSOR_RETURN_ERROR;
 
+	mutex_lock(&psensor->inst.i2c_cfg.pinst->lock);
+	if (pwr_status && psensor->inst.i2c_cfg.pinst->pi2c_state_on) {
+		psensor->inst.i2c_cfg.pinst->refcnt++;
+		if (psensor->inst.i2c_cfg.pinst->refcnt == 1)
+			pinctrl_select_state(
+				psensor->inst.i2c_cfg.pinst->pi2c_pinctrl,
+				psensor->inst.i2c_cfg.pinst->pi2c_state_on);
+	} else if (!pwr_status && psensor->inst.i2c_cfg.pinst->pi2c_state_off) {
+		psensor->inst.i2c_cfg.pinst->refcnt--;
+		if (psensor->inst.i2c_cfg.pinst->refcnt == 0)
+			pinctrl_select_state(
+				psensor->inst.i2c_cfg.pinst->pi2c_pinctrl,
+				psensor->inst.i2c_cfg.pinst->pi2c_state_off);
+	}
+	mutex_unlock(&psensor->inst.i2c_cfg.pinst->lock);
 
 	snprintf(str_index, sizeof(str_index), "%d", sensor_idx);
 	imgsensor_hw_power_sequence(
 	    phw,
 	    sensor_idx,
 	    pwr_status,
-	    platform_power_sequence,
+	    get_platform_pwr_seq(),
 	    str_index);
 
 	imgsensor_hw_power_sequence(
 	    phw,
 	    sensor_idx,
 	    pwr_status,
-	    sensor_power_sequence,
+	    get_sensor_pwr_seq(),
 	    curr_sensor_name);
+
+	/* wait for power stable */
+	if (pwr_status == IMGSENSOR_HW_POWER_STATUS_ON)
+		mDELAY(5);
 
 	return IMGSENSOR_RETURN_SUCCESS;
 }

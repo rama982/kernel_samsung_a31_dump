@@ -362,6 +362,10 @@ struct musb {
 	irqreturn_t (*isr)(int irq, void *priv);
 	struct work_struct irq_work;
 	struct work_struct otg_notifier_work;
+#if defined(CONFIG_BATTERY_SAMSUNG)
+	struct work_struct set_vbus_current_work;
+	int usb_state;
+#endif
 	u16 hwvers;
 	struct delayed_work id_pin_work;
 	struct delayed_work host_work;

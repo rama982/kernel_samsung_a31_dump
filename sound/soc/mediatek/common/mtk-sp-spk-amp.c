@@ -30,6 +30,10 @@
 #include "../../codecs/tfa98xx/inc/tfa98xx_ext.h"
 #endif
 
+#ifdef CONFIG_SND_SOC_SMA1303
+#include "../../codecs/sma1303.h"
+#endif
+
 #define MTK_SPK_NAME "Speaker Codec"
 #define MTK_SPK_REF_NAME "Speaker Codec Ref"
 static unsigned int mtk_spk_type;
@@ -39,6 +43,14 @@ static struct mtk_spk_i2c_ctrl mtk_spk_list[MTK_SPK_TYPE_NUM] = {
 		.codec_dai_name = "snd-soc-dummy-dai",
 		.codec_name = "snd-soc-dummy",
 	},
+#if defined(CONFIG_SND_SOC_SMA1303)
+	[MTK_SPK_SILICON_SM1303] = {
+		.i2c_probe = sma1303_i2c_probe,
+		.i2c_remove = sma1303_i2c_remove,
+		.codec_dai_name = "sma1303-amplifier",
+		.codec_name = "sma1303.18-001e",
+	},
+#endif /* CONFIG_SND_SOC_SMA1303 */
 #if defined(CONFIG_SND_SOC_RT5509)
 	[MTK_SPK_RICHTEK_RT5509] = {
 		.i2c_probe = rt5509_i2c_probe,
@@ -56,7 +68,6 @@ static struct mtk_spk_i2c_ctrl mtk_spk_list[MTK_SPK_TYPE_NUM] = {
 		.codec_name = "MT6660_MT_0",
 	},
 #endif /* CONFIG_SND_SOC_MT6660 */
-
 #ifdef CONFIG_SND_SOC_TFA9874
 	[MTK_SPK_NXP_TFA98XX] = {
 		.i2c_probe = tfa98xx_i2c_probe,
@@ -297,6 +308,9 @@ EXPORT_SYMBOL(mtk_spk_recv_ipi_buf_from_dsp);
 
 static const struct i2c_device_id mtk_spk_i2c_id[] = {
 	{ "tfa98xx", 0},
+#ifdef CONFIG_SND_SOC_SMA1303
+	{ "sma1303", 0},
+#endif
 	{ "speaker_amp", 0},
 	{}
 };
@@ -305,6 +319,9 @@ MODULE_DEVICE_TABLE(i2c, mtk_spk_i2c_id);
 #ifdef CONFIG_OF
 static const struct of_device_id mtk_spk_match_table[] = {
 	{.compatible = "nxp,tfa98xx",},
+#ifdef CONFIG_SND_SOC_SMA1303
+	{.compatible = "siliconmitus,sma1303",},
+#endif
 	{.compatible = "mediatek,speaker_amp",},
 	{},
 };
@@ -313,7 +330,11 @@ MODULE_DEVICE_TABLE(of, mtk_spk_match_table);
 
 static struct i2c_driver mtk_spk_i2c_driver = {
 	.driver = {
+#ifdef CONFIG_SND_SOC_SMA1303
+		.name = "sma1303",
+#else
 		.name = "speaker_amp",
+#endif
 		.owner = THIS_MODULE,
 		.of_match_table = of_match_ptr(mtk_spk_match_table),
 	},

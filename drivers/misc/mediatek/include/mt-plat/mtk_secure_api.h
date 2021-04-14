@@ -275,6 +275,18 @@
 #define MTK_SIP_APUSYS_MNOC_CONTROL \
 	(0x82000519 | MTK_SIP_SMC_AARCH_BIT)
 
+/* OEMFLAG WRITE SMC call */
+#define MTK_SIP_OEM_FLAG_WRITE \
+	(0x82000525 | MTK_SIP_SMC_AARCH_BIT)
+	
+/* OEMFLAG READ SMC call */
+#define MTK_SIP_OEM_FLAG_READ \
+	(0x82000526 | MTK_SIP_SMC_AARCH_BIT)
+
+/* MST SMC call */
+#define MTK_SIP_KERNEL_MST_TEST_TRANSMIT \
+	(0x82000527 | MTK_SIP_SMC_AARCH_BIT)
+
 extern size_t mt_secure_call_all(size_t function_id,
 	size_t arg0, size_t arg1, size_t arg2,
 	size_t arg3, size_t *r1, size_t *r2, size_t *r3);

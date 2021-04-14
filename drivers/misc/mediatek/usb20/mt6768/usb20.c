@@ -24,6 +24,16 @@
 
 #include <mt-plat/mtk_boot_common.h>
 #include <mt-plat/charger_type.h>
+#if defined(CONFIG_BATTERY_SAMSUNG)
+#include "../../../../battery/common/include/sec_charging_common.h"
+#endif
+
+#if IS_ENABLED(CONFIG_USB_HOST_NOTIFY)
+#include <linux/host_notify.h>
+#endif
+#if IS_ENABLED(CONFIG_USB_NOTIFY_LAYER)
+#include <linux/usb_notify.h>
+#endif
 
 #ifdef FPGA_PLATFORM
 #include <linux/i2c.h>
@@ -52,6 +62,40 @@ static DEFINE_SPINLOCK(usb_hal_dpidle_lock);
 #define DPIDLE_TIMER_INTERVAL_MS 30
 
 static void issue_dpidle_timer(void);
+
+#if defined(CONFIG_BATTERY_SAMSUNG)
+static int musb_set_vbus_current(int usb_state)
+{
+	struct power_supply *psy;
+	union power_supply_propval pval = {0};
+	int cur = 100;
+
+	if (usb_state == USB_CONFIGURED)
+		cur = USB_CURRENT_HIGH_SPEED;
+	else
+		cur = USB_CURRENT_UNCONFIGURED;
+
+	pr_info("%s : %dmA\n", __func__, cur);
+
+	psy = power_supply_get_by_name("battery");
+	if (psy) {
+		pval.intval = cur;
+		psy_do_property("battery", set,
+			POWER_SUPPLY_EXT_PROP_USB_CONFIGURE, pval);
+		power_supply_put(psy);
+	}
+
+	return 0;
+}
+
+static void musb_set_vbus_current_work(struct work_struct *w)
+{
+	struct musb *musb = container_of(w,
+		struct musb, set_vbus_current_work);
+
+	musb_set_vbus_current(musb->usb_state);
+}
+#endif
 
 static void dpidle_timer_wakeup_func(unsigned long data)
 {
@@ -259,9 +303,6 @@ static void mt_usb_try_idle(struct musb *musb, unsigned long timeout)
 	unsigned long default_timeout = jiffies + msecs_to_jiffies(3);
 	static unsigned long last_timer;
 
-	DBG(0, "skip %s\n", __func__);
-	return;
-
 	if (timeout == 0)
 		timeout = default_timeout;
 
@@ -321,7 +362,7 @@ static void mt_usb_enable(struct musb *musb)
 	#endif
 
 	flags = musb_readl(musb->mregs, USB_L1INTM);
-	usb_phy_recover();
+	usb_phy_recover(musb->is_host);
 
 	/* update musb->power & mtk_usb_power in the same time */
 	musb->power = true;
@@ -474,6 +515,23 @@ static bool musb_hal_is_vbus_exist(void)
 }
 
 DEFINE_MUTEX(cable_connected_lock);
+
+#if IS_ENABLED(CONFIG_USB_NOTIFY_LAYER)
+bool usb_cable_connected(void)
+{
+	struct otg_notify *usb_notify;
+	int usb_mode = 0;
+
+	usb_notify = get_otg_notify();
+	usb_mode = get_usb_mode(usb_notify);
+	printk("usb: %s: %d\n", __func__, usb_mode);
+	if (usb_mode == NOTIFY_PERIPHERAL_MODE)
+		return true;
+	else
+		return false;
+
+}
+#else
 /* be aware this could not be used in non-sleep context */
 bool usb_cable_connected(void)
 {
@@ -505,6 +563,7 @@ bool usb_cable_connected(void)
 	mutex_unlock(&cable_connected_lock);
 	return connected;
 }
+#endif
 
 static bool cmode_effect_on(void)
 {
@@ -543,9 +602,7 @@ void do_connection_work(struct work_struct *data)
 	usb_connected = usb_cable_connected();
 
 	/* additional check operation here */
-	if (musb_force_on)
-		usb_on = true;
-	else if (work->ops == CONNECTION_OPS_CHECK)
+	if (work->ops == CONNECTION_OPS_CHECK)
 		usb_on = usb_connected;
 	else
 		usb_on = (work->ops ==
@@ -711,6 +768,11 @@ void musb_sync_with_bat(struct musb *musb, int usb_state)
 #ifdef CONFIG_MTK_CHARGER
 	BATTERY_SetUSBState(usb_state);
 #endif
+#if defined(CONFIG_BATTERY_SAMSUNG)
+	musb->usb_state = usb_state;
+	schedule_work(&musb->set_vbus_current_work);
+#endif
+
 #endif
 }
 
@@ -1530,6 +1592,9 @@ static int __init mt_usb_init(struct musb *musb)
 #endif
 
 	setup_timer(&musb_idle_timer, musb_do_idle, (unsigned long)musb);
+#if defined(CONFIG_BATTERY_SAMSUNG)
+	INIT_WORK(&musb->set_vbus_current_work, musb_set_vbus_current_work);
+#endif
 
 #ifdef CONFIG_USB_MTK_OTG
 	mt_usb_otg_init(musb);
@@ -1595,6 +1660,45 @@ static u64 mt_usb_dmamask = DMA_BIT_MASK(36);
 static u64 mt_usb_dmamask = DMA_BIT_MASK(32);
 #endif
 
+struct mt_usb_phy_data *phy_data;
+int phy_data_cnt;
+
+static void mt_usb_tuning_dt(struct device *dev)
+{
+	struct device_node *node =
+		of_find_compatible_node(NULL,
+			NULL, "mediatek,phy_tuning");
+	struct device_node *nn;
+	int i = 0;
+
+	phy_data_cnt = of_get_child_count(node);
+	if (phy_data_cnt) {
+		phy_data = devm_kzalloc(dev,
+		     sizeof(*phy_data) + phy_data_cnt * sizeof(*phy_data),
+		     GFP_KERNEL);
+		if (!phy_data) {
+			pr_err("%s out of memory\n", __func__);
+			return;
+		}
+		for_each_child_of_node(node, nn) {
+			struct mt_usb_phy_data *data = &phy_data[i++];
+
+			data->name = of_get_property(nn, "label", NULL);
+			of_property_read_u32(nn, "offset", &data->offset);
+			of_property_read_u32(nn, "shift", &data->shift);
+			of_property_read_u32(nn, "mask", &data->mask);
+			of_property_read_u32(nn, "value", &data->value);
+			of_property_read_u32(nn, "host", &data->host);
+
+			pr_info("%s %s : 0x%x 0x%x 0x%x 0x%x 0x%x\n",
+				__func__, data->name,
+				data->offset, data->shift,
+				data->mask, data->value,
+				data->host);
+		}
+	}
+}
+
 static int mt_usb_probe(struct platform_device *pdev)
 {
 	struct musb_hdrc_platform_data *pdata = pdev->dev.platform_data;
@@ -1656,6 +1760,7 @@ static int mt_usb_probe(struct platform_device *pdev)
 
 	of_property_read_u32(np, "num_eps", (u32 *) &config->num_eps);
 	config->multipoint = of_property_read_bool(np, "multipoint");
+	mt_usb_tuning_dt(&pdev->dev);
 
 	pdata->config = config;
 

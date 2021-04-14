@@ -22,8 +22,12 @@
  * mt6768_mt6358_spk_amp_event()
  */
 #define EXT_SPK_AMP_W_NAME "Ext_Speaker_Amp"
+#define EXT_HP_AMP_W_NAME "Ext_Headset_Amp"
 
 static const char *const mt6768_spk_type_str[] = {MTK_SPK_NOT_SMARTPA_STR,
+#ifdef CONFIG_SND_SOC_SMA1303
+						  MTK_SPK_SILICON_SM1303_STR,
+#endif
 						  MTK_SPK_RICHTEK_RT5509_STR,
 						  MTK_SPK_MEDIATEK_MT6660_STR};
 static const char *const mt6768_spk_i2s_type_str[] = {MTK_SPK_I2S_0_STR,
@@ -92,8 +96,32 @@ static int mt6768_mt6358_spk_amp_event(struct snd_soc_dapm_widget *w,
 	return 0;
 };
 
+static int mt6768_mt6358_hp_amp_event(struct snd_soc_dapm_widget *w,
+				       struct snd_kcontrol *kcontrol,
+				       int event)
+{
+	struct snd_soc_dapm_context *dapm = w->dapm;
+	struct snd_soc_card *card = dapm->card;
+
+	dev_info(card->dev, "%s(), event %d\n", __func__, event);
+
+	switch (event) {
+	case SND_SOC_DAPM_POST_PMU:
+		/* Control EAR SW OUT pin for Open headset path  */
+		break;
+	case SND_SOC_DAPM_PRE_PMD:
+		/* Control EAR SW OUT pin for Close headset path  */
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+};
+
 static const struct snd_soc_dapm_widget mt6768_mt6358_widgets[] = {
 	SND_SOC_DAPM_SPK(EXT_SPK_AMP_W_NAME, mt6768_mt6358_spk_amp_event),
+	SND_SOC_DAPM_SPK(EXT_HP_AMP_W_NAME, mt6768_mt6358_hp_amp_event),
 };
 
 static const struct snd_soc_dapm_route mt6768_mt6358_routes[] = {
@@ -101,10 +129,16 @@ static const struct snd_soc_dapm_route mt6768_mt6358_routes[] = {
 	{EXT_SPK_AMP_W_NAME, NULL, "LINEOUT L HSSPK"},
 	{EXT_SPK_AMP_W_NAME, NULL, "Headphone L Ext Spk Amp"},
 	{EXT_SPK_AMP_W_NAME, NULL, "Headphone R Ext Spk Amp"},
+	{EXT_HP_AMP_W_NAME, NULL, "Headphone L"},
+	{EXT_HP_AMP_W_NAME, NULL, "Headphone R"},
+	{EXT_HP_AMP_W_NAME, NULL, "LINEOUT L HSSPK"},
+	{EXT_HP_AMP_W_NAME, NULL, "Headphone L Ext Spk Amp"},
+	{EXT_HP_AMP_W_NAME, NULL, "Headphone R Ext Spk Amp"},
 };
 
 static const struct snd_kcontrol_new mt6768_mt6358_controls[] = {
 	SOC_DAPM_PIN_SWITCH(EXT_SPK_AMP_W_NAME),
+	SOC_DAPM_PIN_SWITCH(EXT_HP_AMP_W_NAME),
 	SOC_ENUM_EXT("MTK_SPK_TYPE_GET", mt6768_spk_type_enum[0],
 		     mt6768_spk_type_get, NULL),
 	SOC_ENUM_EXT("MTK_SPK_I2S_OUT_TYPE_GET", mt6768_spk_type_enum[1],
@@ -274,10 +308,12 @@ static int mt6768_mt6358_init(struct snd_soc_pcm_runtime *rtd)
 
 	/* disable ext amp connection */
 	snd_soc_dapm_disable_pin(dapm, EXT_SPK_AMP_W_NAME);
+	snd_soc_dapm_disable_pin(dapm, EXT_HP_AMP_W_NAME);
 
 	return 0;
 }
 
+#if !defined(CONFIG_SND_SOC_SMA1303)
 static int mt6768_i2s_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 				      struct snd_pcm_hw_params *params)
 {
@@ -290,6 +326,7 @@ static int mt6768_i2s_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 	params_set_format(params, SNDRV_PCM_FORMAT_S32_LE);
 	return 0;
 }
+#endif
 
 #ifdef CONFIG_MTK_VOW_SUPPORT
 static const struct snd_pcm_hardware mt6768_mt6358_vow_hardware = {
@@ -484,6 +521,30 @@ static struct snd_soc_dai_link mt6768_mt6358_dai_links[] = {
 		.ignore_suspend = 1,
 	},
 	{
+		.name = "Hostless_FM_Record",
+		.stream_name = "Hostless_FM_Record",
+		.cpu_dai_name = "Hostless FM RECORD DAI",
+		.codec_name = "snd-soc-dummy",
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.trigger = {SND_SOC_DPCM_TRIGGER_PRE,
+			    SND_SOC_DPCM_TRIGGER_PRE},
+		.dynamic = 1,
+		.dpcm_capture = 1,
+		.ignore_suspend = 1,
+	},
+	{
+		.name = "Hostless_ADDA_DL_HWGain",
+		.stream_name = "Hostless_ADDA_DL_HWGain",
+		.cpu_dai_name = "Hostless_ADDA_DL_HWGain DAI",
+		.codec_name = "snd-soc-dummy",
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.trigger = {SND_SOC_DPCM_TRIGGER_PRE,
+			    SND_SOC_DPCM_TRIGGER_PRE},
+		.dynamic = 1,
+		.dpcm_playback = 1,
+		.ignore_suspend = 1,
+	},
+	{
 		.name = "Hostless_Speech",
 		.stream_name = "Hostless_Speech",
 		.cpu_dai_name = "Hostless Speech DAI",
@@ -553,7 +614,9 @@ static struct snd_soc_dai_link mt6768_mt6358_dai_links[] = {
 		.no_pcm = 1,
 		.dpcm_playback = 1,
 		.ignore_suspend = 1,
+#if !defined(CONFIG_SND_SOC_SMA1303)
 		.be_hw_params_fixup = mt6768_i2s_hw_params_fixup,
+#endif
 	},
 	{
 		.name = "I2S0",
@@ -563,7 +626,9 @@ static struct snd_soc_dai_link mt6768_mt6358_dai_links[] = {
 		.no_pcm = 1,
 		.dpcm_capture = 1,
 		.ignore_suspend = 1,
+#if !defined(CONFIG_SND_SOC_SMA1303)
 		.be_hw_params_fixup = mt6768_i2s_hw_params_fixup,
+#endif
 	},
 	{
 		.name = "I2S1",
@@ -573,7 +638,9 @@ static struct snd_soc_dai_link mt6768_mt6358_dai_links[] = {
 		.no_pcm = 1,
 		.dpcm_playback = 1,
 		.ignore_suspend = 1,
+#if !defined(CONFIG_SND_SOC_SMA1303)
 		.be_hw_params_fixup = mt6768_i2s_hw_params_fixup,
+#endif
 	},
 	{
 		.name = "I2S2",
@@ -583,7 +650,9 @@ static struct snd_soc_dai_link mt6768_mt6358_dai_links[] = {
 		.no_pcm = 1,
 		.dpcm_capture = 1,
 		.ignore_suspend = 1,
+#if !defined(CONFIG_SND_SOC_SMA1303)
 		.be_hw_params_fixup = mt6768_i2s_hw_params_fixup,
+#endif
 	},
 	{
 		.name = "HW Gain 1",

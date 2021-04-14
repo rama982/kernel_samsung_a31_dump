@@ -67,6 +67,8 @@
 /* Trustonic Specific flag to detect ION mem */
 #define MMU_ION_BUF		BIT(24)
 
+extern struct mutex pm_mutex;
+
 static inline long gup_local(struct mm_struct *mm, uintptr_t start,
 			     unsigned long nr_pages, int write,
 			     struct page **pages)
@@ -88,7 +90,13 @@ static inline long gup_local_repeat(struct mm_struct *mm, uintptr_t start,
 	long ret = 0;
 
 	while (retries--) {
+		mutex_lock(&pm_mutex);
+		tee_cma_restrict_gfp_mask();
+
 		ret = gup_local(mm, start, nr_pages, write, pages);
+
+		tee_cma_restore_gfp_mask();
+		mutex_unlock(&pm_mutex);
 
 		if (-EBUSY != ret)
 			break;

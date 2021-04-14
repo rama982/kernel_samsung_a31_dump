@@ -34,6 +34,12 @@
 #include <linux/slab.h>
 #if defined(CONFIG_MEDIATEK_MT6577_AUXADC)
 #include <linux/iio/consumer.h>
+#include <linux/iio/iio.h>
+#endif
+#ifdef MTK_SW_WORKAROUND
+#ifdef CONFIG_OF
+#include <linux/of.h>
+#endif
 #endif
 /*=============================================================
  *Weak functions
@@ -69,8 +75,8 @@ static int mtkts_btsmdpa_debug_log;
 static int kernelmode;
 static int g_THERMAL_TRIP[10] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 
-static int num_trip = 1;
-static char g_bind0[20] = "mtk-cl-kshutdown00";
+static int num_trip;
+static char g_bind0[20] = {"mtk-cl-shutdown02"};
 static char g_bind1[20] = { 0 };
 static char g_bind2[20] = { 0 };
 static char g_bind3[20] = { 0 };
@@ -135,6 +141,11 @@ struct BTSMDPA_TEMPERATURE {
 	__s32 BTSMDPA_Temp;
 	__s32 TemperatureR;
 };
+
+/* Add HW version check to avoid reading AP AUXADC for bringup phone */
+#ifdef MTK_SW_WORKAROUND
+static unsigned int hw_version;
+#endif
 
 static int g_RAP_pull_up_R = BTSMDPA_RAP_PULL_UP_R;
 static int g_TAP_over_critical_low = BTSMDPA_TAP_OVER_CRITICAL_LOW;
@@ -615,6 +626,11 @@ static int get_hw_btsmdpa_temp(void)
 	static int valid_temp;
 #endif
 
+#ifdef MTK_SW_WORKAROUND
+	if (hw_version == 0)
+		return 40;
+#endif
+
 #if defined(CONFIG_MEDIATEK_MT6577_AUXADC)
 	ret = iio_read_channel_processed(thermistor_ch1, &val);
 	mtkts_btsmdpa_dprintk("get_hw_btsmdpa_temp val=%d\n", val);
@@ -697,6 +713,7 @@ static int get_hw_btsmdpa_temp(void)
 	mtkts_btsmdpa_dprintk("APtery output mV = %d\n", ret);
 	output = mtk_ts_btsmdpa_volt_to_temp(ret);
 	mtkts_btsmdpa_dprintk("BTSMDPA output temperature = %d\n", output);
+
 	return output;
 }
 
@@ -1190,6 +1207,9 @@ static int mtkts_btsmdpa_param_read(struct seq_file *m, void *v)
 	seq_printf(m, "%d\n", g_TAP_over_critical_low);
 	seq_printf(m, "%d\n", g_RAP_ntc_table);
 	seq_printf(m, "%d\n", g_RAP_ADC_channel);
+#if defined(CONFIG_MEDIATEK_MT6577_AUXADC)
+	seq_printf(m, "%d\n", thermistor_ch1->channel->channel);
+#endif
 
 	return 0;
 }
@@ -1467,6 +1487,28 @@ static int __init mtkts_btsmdpa_init(void)
 #endif
 
 	mtkts_btsmdpa_dprintk("[%s]\n", __func__);
+
+	/* Get HW version from device tree */
+#ifdef MTK_SW_WORKAROUND
+	{
+		struct device_node *root = of_find_node_by_path("/");
+		int ret;
+
+		if (IS_ERR_OR_NULL(root)) {
+			mtkts_btsmdpa_printk("root dev node is NULL\n");
+			return -1;
+		}
+
+		ret = of_property_read_u32(root, "dtbo-hw_rev", &hw_version);
+		if (ret < 0) {
+			mtkts_btsmdpa_printk("get dtbo-hw_rev fail:%d\n", ret);
+			hw_version = 0;
+		} else {
+			mtkts_btsmdpa_printk("Get HW version = %d\n",
+				hw_version);
+		}
+	}
+#endif
 
 #if defined(CONFIG_MEDIATEK_MT6577_AUXADC)
 	err = platform_driver_register(&mtk_thermal_btsmdpa_driver);

@@ -40,6 +40,8 @@ ifeq ($(CONFIG_MTK_ECCCI_C2K), y)
 ccci-y += modem_sys3.o
 endif
 
+ccci-$(CONFIG_MTK_SRIL_SUPPORT) += modem_io_device.o
+
 # platform code
 obj-y += $(subst ",,$(CONFIG_MTK_PLATFORM))/
 

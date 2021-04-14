@@ -312,3 +312,9 @@ config PM_GENERIC_DOMAINS_OF
 
 config CPU_PM
 	bool
+
+config SEC_PM
+	bool "Samsung PowerManagement Feature"
+	default y
+	help
+	  Samsung PowerManagement Feature.

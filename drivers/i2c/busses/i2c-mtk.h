@@ -88,6 +88,7 @@
 
 #define I2C_DEFAUT_SPEED		100000/* hz */
 #define MAX_FS_MODE_SPEED		400000/* hz */
+#define MAX_FS_PLUS_MODE_SPEED          1000000/* hz */
 #define MAX_HS_MODE_SPEED		3400000/* hz */
 #define MAX_DMA_TRANS_SIZE	4096/* 255 */
 #define MAX_CLOCK_DIV			8

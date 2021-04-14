@@ -119,6 +119,9 @@ struct port_t {
 	unsigned int rx_drop_cnt;
 	unsigned int tx_pkg_cnt;
 	port_skb_handler skb_handler;
+#ifdef CONFIG_MTK_SRIL_SUPPORT
+	int md_state_changed;
+#endif
 };
 /****************************************************************************/
 /* API Region called by ccci port object */

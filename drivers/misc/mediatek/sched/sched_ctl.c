@@ -62,6 +62,10 @@ static struct kobj_attribute sched_boost_attr;
 static struct kobj_attribute sched_cpu_prefer_attr;
 #endif
 
+#ifdef CONFIG_MTK_TC10_FEATURE
+static int sched_ramup_factor; /*0 means disable (min:1%,max 100%)*/
+#endif
+
 static int sched_hint_status(int util, int cap)
 {
 	enum sched_status_t status;
@@ -270,6 +274,42 @@ static struct kobj_attribute sched_walt_info_attr =
 __ATTR(walt_debug, 0600 /* S_IWUSR | S_IRUSR */,
 			show_walt_info, store_walt_info);
 
+
+#ifdef CONFIG_MTK_TC10_FEATURE
+static ssize_t store_sched_forked_ramup_factor(struct kobject *kobj,
+		struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	unsigned int val = 0;
+
+	if (sscanf(buf, "%iu", &val) != 0) {
+		if (val >= 0 && val <= 100)
+			sched_ramup_factor = val;
+	}
+
+	return count;
+}
+
+static ssize_t show_sched_forked_ramup_factor(struct kobject *kobj,
+		struct kobj_attribute *attr, char *buf)
+{
+	unsigned int len = 0;
+	unsigned int max_len = 4096;
+
+	len += snprintf(buf, max_len, "%d\n", sched_ramup_factor);
+	return len;
+}
+
+int sched_forked_ramup_factor(void)
+{
+
+	return sched_ramup_factor;
+}
+
+static struct kobj_attribute sched_forked_ramup_factor_attr =
+__ATTR(sched_forked_ramup_factor, 0644, show_sched_forked_ramup_factor,
+		store_sched_forked_ramup_factor);
+#endif
+
 static struct attribute *sched_attrs[] = {
 	&sched_info_attr.attr,
 	&sched_load_thresh_attr.attr,
@@ -282,6 +322,9 @@ static struct attribute *sched_attrs[] = {
 	&sched_iso_attr.attr,
 	&set_sched_iso_attr.attr,
 	&set_sched_deiso_attr.attr,
+#ifdef CONFIG_MTK_TC10_FEATURE
+	&sched_forked_ramup_factor_attr.attr,
+#endif
 	NULL,
 };
 
@@ -579,7 +622,9 @@ int set_sched_boost(unsigned int val)
 		if (sysctl_sched_isolation_hint_enable_backup > 0)
 			sysctl_sched_isolation_hint_enable =
 				sysctl_sched_isolation_hint_enable_backup;
-
+#ifdef CONFIG_PRIO_PINNED_BOOST
+		sysctl_sched_pinned_boost_enable = 0;
+#endif
 	} else if ((val > SCHED_NO_BOOST) && (val < SCHED_UNKNOWN_BOOST)) {
 
 		sysctl_sched_isolation_hint_enable_backup =
@@ -590,6 +635,10 @@ int set_sched_boost(unsigned int val)
 			sched_scheduler_switch(SCHED_HMP_LB);
 		else if (val == SCHED_FG_BOOST)
 			sched_set_boost_fg();
+#ifdef CONFIG_PRIO_PINNED_BOOST
+		else if (val == SCHED_PINNED_BOOST)
+			sysctl_sched_pinned_boost_enable = 1;
+#endif
 	}
 	printk_deferred("[name:sched_boost&] sched boost: set %d\n",
 			sched_boost_type);
@@ -647,6 +696,12 @@ static ssize_t show_sched_boost(struct kobject *kobj,
 	case SCHED_FG_BOOST:
 		len += snprintf(buf, max_len,
 			"sched boost= foreground boost\n\n");
+#ifdef CONFIG_PRIO_PINNED_BOOST
+	case SCHED_PINNED_BOOST:
+		len += snprintf(buf, max_len,
+			"sched boost= pinned boost\n\n");
+		break;
+#endif
 		break;
 	default:
 		len += snprintf(buf, max_len, "sched boost= no boost\n\n");

@@ -17,6 +17,9 @@ enum {
 	SCHED_NO_BOOST = 0,
 	SCHED_ALL_BOOST,
 	SCHED_FG_BOOST,
+#ifdef CONFIG_PRIO_PINNED_BOOST
+	SCHED_PINNED_BOOST,
+#endif
 	SCHED_UNKNOWN_BOOST
 };
 
@@ -39,3 +42,4 @@ extern int schedtune_task_boost(struct task_struct *tsk);
 extern unsigned int hmp_cpu_is_slowest(int cpu);
 extern unsigned int hmp_cpu_is_fastest(int cpu);
 extern bool is_intra_domain(int prev, int target);
+extern int set_sched_boost(unsigned int val);

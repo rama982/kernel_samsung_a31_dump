@@ -32,8 +32,6 @@
 #define MTK_VENC_MAX_H  1088U
 #define DFT_CFG_WIDTH   MTK_VENC_MIN_W
 #define DFT_CFG_HEIGHT  MTK_VENC_MIN_H
-#define MTK_MAX_CTRLS_HINT      20
-
 
 static void mtk_venc_worker(struct work_struct *work);
 static struct mtk_video_fmt
@@ -245,6 +243,13 @@ static int vidioc_venc_s_ctrl(struct v4l2_ctrl *ctrl)
 		p->bitrate = ctrl->val;
 		ctx->param_change |= MTK_ENCODE_PARAM_BITRATE;
 		break;
+	case V4L2_CID_MPEG_MTK_SEC_ENCODE:
+		p->svp_mode = ctrl->val;
+		ctx->param_change |= MTK_ENCODE_PARAM_SEC_ENCODE;
+		mtk_v4l2_debug(0, "[%d] V4L2_CID_MPEG_MTK_SEC_ENCODE id %d val %d array[0] %d array[1] %d",
+			ctx->id, ctrl->id, ctrl->val,
+		ctrl->p_new.p_u32[0], ctrl->p_new.p_u32[1]);
+		break;
 	case V4L2_CID_MPEG_VIDEO_B_FRAMES:
 		mtk_v4l2_debug(2, "V4L2_CID_MPEG_VIDEO_B_FRAMES val = %d",
 			       ctrl->val);
@@ -409,6 +414,21 @@ static int vidioc_venc_s_ctrl(struct v4l2_ctrl *ctrl)
 			"V4L2_CID_MPEG_MTK_MAX_HEIGHT: %d",
 			ctrl->val);
 		p->max_h = ctrl->val;
+		break;
+	case V4L2_CID_MPEG_MTK_ENCODE_RC_I_FRAME_QP:
+		mtk_v4l2_debug(2, "V4L2_CID_MPEG_MTK_ENCODE_RC_I_FRAME_QP val = %d",
+			ctrl->val);
+		p->i_qp = ctrl->val;
+		break;
+	case V4L2_CID_MPEG_MTK_ENCODE_RC_P_FRAME_QP:
+		mtk_v4l2_debug(2, "V4L2_CID_MPEG_MTK_ENCODE_RC_P_FRAME_QP val = %d",
+			ctrl->val);
+		p->p_qp = ctrl->val;
+		break;
+	case V4L2_CID_MPEG_MTK_ENCODE_RC_B_FRAME_QP:
+		mtk_v4l2_debug(2, "V4L2_CID_MPEG_MTK_ENCODE_RC_B_FRAME_QP val = %d",
+			ctrl->val);
+		p->b_qp = ctrl->val;
 		break;
 	default:
 		mtk_v4l2_err("ctrl-id=%d not support!", ctrl->id);
@@ -878,9 +898,7 @@ static void mtk_venc_set_param(struct mtk_vcodec_ctx *ctx,
 		break;
 
 	default:
-		mtk_v4l2_err("Unsupport fourcc =%d default use I420",
-			q_data_src->fmt->fourcc);
-		param->input_yuv_fmt = VENC_YUV_FORMAT_I420;
+		mtk_v4l2_err("Unsupport fourcc =%d", q_data_src->fmt->fourcc);
 		break;
 	}
 	param->profile = enc_params->profile;
@@ -905,6 +923,9 @@ static void mtk_venc_set_param(struct mtk_vcodec_ctx *ctx,
 	param->heif_grid_size = enc_params->heif_grid_size;
 	param->max_w = enc_params->max_w;
 	param->max_h = enc_params->max_h;
+	param->i_qp = enc_params->i_qp;
+	param->p_qp = enc_params->p_qp;
+	param->b_qp = enc_params->b_qp;
 
 	ctx->use_gce = (ctx->use_gce == 1) ?
 		ctx->use_gce :
@@ -1010,8 +1031,6 @@ static int vidioc_venc_s_fmt_cap(struct file *file, void *priv,
 		if (ret) {
 			mtk_v4l2_err("venc_if_init failed=%d, codec type=%x",
 				     ret, q_data->fmt->fourcc);
-			ctx->state = MTK_STATE_ABORT;
-			mtk_venc_queue_error_event(ctx);
 			return -EBUSY;
 		}
 		ctx->state = MTK_STATE_INIT;
@@ -1551,7 +1570,7 @@ static int vb2ops_venc_start_streaming(struct vb2_queue *q, unsigned int count)
 	/* Once state turn into MTK_STATE_ABORT, we need stop_streaming
 	  * to clear it
 	  */
-	if (ctx->state == MTK_STATE_ABORT || ctx->state == MTK_STATE_FREE) {
+	if (ctx->state == MTK_STATE_ABORT) {
 		ret = -EIO;
 		goto err_set_param;
 	}
@@ -1565,6 +1584,7 @@ static int vb2ops_venc_start_streaming(struct vb2_queue *q, unsigned int count)
 			return 0;
 	}
 
+	memset(&param, 0, sizeof(param));
 	mtk_venc_set_param(ctx, &param);
 	ret = venc_if_set_param(ctx, VENC_SET_PARAM_ENC, &param);
 	if (ret) {
@@ -1652,6 +1672,7 @@ static void vb2ops_venc_stop_streaming(struct vb2_queue *q)
 		return;
 	}
 
+	ctx->state = MTK_STATE_FREE;
 }
 
 static const struct vb2_ops mtk_venc_vb2_ops = {
@@ -1749,6 +1770,15 @@ static int mtk_venc_param_change(struct mtk_vcodec_ctx *ctx)
 			       enc_prm.bitrate);
 		ret |= venc_if_set_param(ctx,
 					 VENC_SET_PARAM_ADJUST_BITRATE,
+					 &enc_prm);
+	}
+	if (mtk_buf->param_change & MTK_ENCODE_PARAM_SEC_ENCODE) {
+		enc_prm.svp_mode = mtk_buf->enc_params.svp_mode;
+		mtk_v4l2_debug(0, "[%d] change param svp=%d",
+				ctx->id,
+				enc_prm.svp_mode);
+		ret |= venc_if_set_param(ctx,
+					 VENC_SET_PARAM_SEC_MODE,
 					 &enc_prm);
 	}
 	if (!ret && mtk_buf->param_change & MTK_ENCODE_PARAM_FRAMERATE) {
@@ -2248,7 +2278,9 @@ int mtk_vcodec_enc_ctrls_setup(struct mtk_vcodec_ctx *ctx)
 	v4l2_ctrl_handler_init(handler, MTK_MAX_CTRLS_HINT);
 
 	v4l2_ctrl_new_std(handler, ops, V4L2_CID_MPEG_VIDEO_BITRATE,
-			  1, 400000000, 1, 20000000);
+			  0, 400000000, 1, 20000000);
+	v4l2_ctrl_new_std(handler, ops, V4L2_CID_MPEG_MTK_SEC_ENCODE,
+			0, 2, 1, 0);
 	v4l2_ctrl_new_std(handler, ops, V4L2_CID_MPEG_VIDEO_B_FRAMES,
 			  0, 2, 1, 0);
 	v4l2_ctrl_new_std(handler, ops, V4L2_CID_MPEG_VIDEO_FRAME_RC_ENABLE,
@@ -2262,7 +2294,13 @@ int mtk_vcodec_enc_ctrls_setup(struct mtk_vcodec_ctx *ctx)
 	v4l2_ctrl_new_std(handler, ops, V4L2_CID_MPEG_VIDEO_MB_RC_ENABLE,
 			  0, 1, 1, 0);
 	v4l2_ctrl_new_std(handler, ops, V4L2_CID_MPEG_VIDEO_FORCE_KEY_FRAME,
-			  0, 0, 0, 0);
+			  0, 1, 1, 0);
+	v4l2_ctrl_new_std(handler, ops, V4L2_CID_MPEG_MTK_ENCODE_RC_I_FRAME_QP,
+			  0, 51, 1, 51);
+	v4l2_ctrl_new_std(handler, ops, V4L2_CID_MPEG_MTK_ENCODE_RC_P_FRAME_QP,
+			  0, 51, 1, 51);
+	v4l2_ctrl_new_std(handler, ops, V4L2_CID_MPEG_MTK_ENCODE_RC_B_FRAME_QP,
+			  0, 51, 1, 51);
 	v4l2_ctrl_new_std_menu(handler, ops,
 		V4L2_CID_MPEG_VIDEO_HEADER_MODE,
 		V4L2_MPEG_VIDEO_HEADER_MODE_JOINED_WITH_1ST_FRAME,

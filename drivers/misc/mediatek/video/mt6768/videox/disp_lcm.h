@@ -37,7 +37,9 @@ struct disp_lcm_handle {
 extern struct LCM_DRIVER *lcm_driver_list[];
 extern unsigned int lcm_count;
 
-
+#if defined(CONFIG_SMCDSD_PANEL)
+int disp_lcm_cmd_q(struct disp_lcm_handle *plcm, unsigned int enable);
+#endif
 struct disp_lcm_handle *disp_lcm_probe(char *plcm_name,
 	enum LCM_INTERFACE_ID lcm_id, int is_lcm_inited);
 struct disp_lcm_handle *disp_ext_lcm_probe(char *plcm_name,
@@ -51,10 +53,21 @@ int disp_lcm_esd_check(struct disp_lcm_handle *plcm);
 int disp_lcm_esd_recover(struct disp_lcm_handle *plcm);
 int disp_lcm_suspend(struct disp_lcm_handle *plcm);
 int disp_lcm_resume(struct disp_lcm_handle *plcm);
+#if defined(CONFIG_SMCDSD_PANEL)
+int disp_lcm_suspend_power(struct disp_lcm_handle *plcm);
+#endif
 int disp_lcm_is_support_adjust_fps(struct disp_lcm_handle *plcm);
 int disp_lcm_adjust_fps(void *cmdq, struct disp_lcm_handle *plcm, int fps);
 int disp_lcm_set_backlight(struct disp_lcm_handle *plcm,
 	void *handle, int level);
+int disp_lcm_set_hbm(bool en, struct disp_lcm_handle *plcm, void *qhandle);
+int disp_lcm_get_hbm_state(struct disp_lcm_handle *plcm);
+bool primary_display_is_hbm_change(bool en);
+int disp_lcm_get_hbm_wait(struct disp_lcm_handle *plcm);
+int disp_lcm_set_hbm_wait(bool wait, struct disp_lcm_handle *plcm);
+unsigned int disp_lcm_get_hbm_wait_frame(bool en, struct disp_lcm_handle *plcm);
+int disp_lcm_framedone_notify(struct disp_lcm_handle *plcm);
+int disp_lcm_path_lock(bool lock, struct disp_lcm_handle *plcm);
 int disp_lcm_read_fb(struct disp_lcm_handle *plcm);
 int disp_lcm_ioctl(struct disp_lcm_handle *plcm, enum LCM_IOCTL ioctl,
 	unsigned int arg);
@@ -70,4 +83,14 @@ int disp_lcm_is_partial_support(struct disp_lcm_handle *plcm);
 int disp_lcm_validate_roi(struct disp_lcm_handle *plcm,
 	int *x, int *y, int *w, int *h);
 int disp_lcm_aod(struct disp_lcm_handle *plcm, int enter);
+int disp_dsi_set_withcmdq(struct disp_lcm_handle *plcm, void *cmdq,
+	unsigned int cmd, unsigned char count, unsigned char *para_list,
+	unsigned char force_update);
+int disp_dsi_set_withrawcmdq(struct disp_lcm_handle *plcm, void *cmdq,
+	unsigned int *pdata, unsigned int queue_size,
+	unsigned char force_update);
+int disp_lcm_util_set_read_cmdq_cmd_v2(struct disp_lcm_handle *plcm,
+	void *handle, unsigned int data_id, unsigned int offset,
+	unsigned int cmd, unsigned char *buffer, unsigned char size);
+int disp_lcm_set_display_on(struct disp_lcm_handle *plcm);
 #endif

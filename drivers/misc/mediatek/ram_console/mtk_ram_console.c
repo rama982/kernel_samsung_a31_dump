@@ -35,6 +35,9 @@
 #include <mt-plat/aee.h>
 #include "ram_console.h"
 #include <mach/memory_layout.h>
+#ifdef CONFIG_SEC_DEBUG
+#include <linux/sec_debug.h>
+#endif
 
 #define RAM_CONSOLE_HEADER_STR_LEN 1024
 
@@ -46,7 +49,7 @@ static int mtk_cpu_num;
 static int ram_console_init_done;
 static unsigned int old_wdt_status;
 static int ram_console_clear;
-
+#ifndef CONFIG_SEC_DEBUG
 /*
  *  This group of API call by sub-driver module to report reboot reasons
  *  aee_rr_* stand for previous reboot reason
@@ -205,6 +208,7 @@ struct last_reboot_reason {
 	unsigned long last_sync_func;
 	uint32_t gz_irq;
 };
+#endif
 
 struct reboot_reason_pl {
 	u32 wdt_status;
@@ -215,6 +219,7 @@ struct reboot_reason_lk {
 	u32 data[0];
 };
 
+#ifndef CONFIG_SEC_DEBUG
 struct ram_console_buffer {
 	uint32_t sig;
 	/* for size comptible */
@@ -234,11 +239,12 @@ struct ram_console_buffer {
 	uint32_t log_size;
 	uint32_t sz_console;
 };
+#endif
 
 #define REBOOT_REASON_SIG (0x43474244)	/* DBRR */
 static int FIQ_log_size = sizeof(struct ram_console_buffer);
 
-static struct ram_console_buffer *ram_console_buffer;
+struct ram_console_buffer *ram_console_buffer;
 static struct ram_console_buffer *ram_console_old;
 static struct ram_console_buffer *ram_console_buffer_pa;
 
@@ -593,6 +599,16 @@ static int __init ram_console_init(struct ram_console_buffer *buffer,
 #ifndef CONFIG_PSTORE
 	register_console(&ram_console);
 #endif
+
+#ifdef CONFIG_SEC_DEBUG
+	/* Initialize flags */
+	LAST_RR_SET(is_upload, UPLOAD_MAGIC_UPLOAD);
+	LAST_RR_SET(upload_reason, UPLOAD_CAUSE_INIT);
+	LAST_RR_SET(is_power_reset, SEC_POWER_OFF);
+	LAST_RR_SET(power_reset_reason, SEC_RESET_REASON_INIT);
+
+	printk(KERN_INFO "Debug Flags set\n");
+#endif
 	ram_console_init_val();
 	ram_console_init_done = 1;
 	return 0;
@@ -837,6 +853,7 @@ static int __init ram_console_early_init(void)
 	else
 		return -ENODEV;
 }
+console_initcall(ram_console_early_init);
 
 static int ram_console_show(struct seq_file *m, void *v)
 {
@@ -861,7 +878,7 @@ static int __init ram_console_late_init(void)
 {
 	struct proc_dir_entry *entry;
 
-	entry = proc_create("last_kmsg", 0444, NULL, &ram_console_file_ops);
+	entry = proc_create("last_kmsg_mtk", 0444, NULL, &ram_console_file_ops);
 	if (!entry) {
 		pr_err("ram_console: failed to create proc entry\n");
 		kfree(ram_console_old);
@@ -871,7 +888,6 @@ static int __init ram_console_late_init(void)
 	return 0;
 }
 
-console_initcall(ram_console_early_init);
 late_initcall(ram_console_late_init);
 
 int ram_console_pstore_reserve_memory(struct reserved_mem *rmem)
@@ -900,6 +916,7 @@ RESERVEDMEM_OF_DECLARE(reserve_memory_pstore, "mediatek,pstore",
 RESERVEDMEM_OF_DECLARE(reserve_memory_ram_console, "mediatek,ram_console",
 		       ram_console_binary_reserve_memory);
 
+#ifndef CONFIG_SEC_DEBUG
 /* aee sram flags save */
 #define RR_BASE(stage)	\
 	((void *)ram_console_buffer + ram_console_buffer->off_##stage)
@@ -921,6 +938,7 @@ RESERVEDMEM_OF_DECLARE(reserve_memory_ram_console, "mediatek,ram_console",
 
 #define LAST_RR_MEMCPY_WITH_ID(rr_item, id, str, len)			\
 	(strlcpy(RR_LINUX->rr_item[id], str, len))
+#endif /* CONFIG_SEC_DEBUG */
 
 static void ram_console_init_val(void)
 {

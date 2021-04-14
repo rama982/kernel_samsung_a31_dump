@@ -43,7 +43,6 @@
 #include "tz_cross/ta_mem.h"
 #include "trustzone/kree/system.h"
 #include "trustzone/kree/mem.h"
-
 #endif
 
 #ifdef CONFIG_MTK_TRUSTED_MEMORY_SUBSYSTEM

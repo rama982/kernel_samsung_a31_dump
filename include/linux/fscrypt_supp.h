@@ -27,6 +27,10 @@ struct fscrypt_operations {
 	const char *key_prefix;
 	int (*get_context)(struct inode *, void *, size_t);
 	int (*set_context)(struct inode *, const void *, size_t, void *);
+#if defined(CONFIG_DDAR) || defined(CONFIG_FSCRYPT_SDP)
+	int (*get_knox_context)(struct inode *, const char *, void *, size_t);
+    int (*set_knox_context)(struct inode *, const char *, const void *, size_t, void *);
+#endif
 	bool (*dummy_context)(struct inode *);
 	bool (*empty_dir)(struct inode *);
 	unsigned int max_namelen;
@@ -91,6 +95,17 @@ extern int fscrypt_is_sw_encrypt(const struct inode *inode);
 extern int fscrypt_get_encryption_info(struct inode *);
 extern void fscrypt_put_encryption_info(struct inode *);
 extern void *fscrypt_crypt_info_act(void *ci, int act);
+#ifdef CONFIG_FSCRYPT_SDP
+extern int fscrypt_get_encryption_key(struct inode *inode,
+						struct fscrypt_key *key);
+#ifdef CONFIG_SDP_KEY_DUMP
+extern int fscrypt_get_encryption_key_classified(struct inode *inode,
+						struct fscrypt_key *key);
+#endif
+extern int fscrypt_get_encryption_kek(struct inode *inode,
+						struct fscrypt_info *crypt_info,
+						struct fscrypt_key *kek);
+#endif
 
 /* fname.c */
 extern int fscrypt_setup_filename(struct inode *, const struct qstr *,

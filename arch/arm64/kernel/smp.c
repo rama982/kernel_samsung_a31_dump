@@ -39,6 +39,9 @@
 #include <linux/completion.h>
 #include <linux/of.h>
 #include <linux/irq_work.h>
+#ifdef CONFIG_SEC_DEBUG
+#include <linux/sec_debug.h>
+#endif
 #include <linux/kexec.h>
 
 #include <asm/alternative.h>
@@ -63,6 +66,10 @@
 
 #ifdef CONFIG_MTK_SCHED_MONITOR
 #include "mtk_sched_mon.h"
+#endif
+
+#ifdef CONFIG_SEC_DEBUG_EXTRA_INFO
+DEFINE_PER_CPU(uint32_t, cpu_online_fail_cnt);
 #endif
 
 DEFINE_PER_CPU_READ_MOSTLY(int, cpu_number);
@@ -175,6 +182,9 @@ int __cpu_up(unsigned int cpu, struct task_struct *idle)
 					    msecs_to_jiffies(1000));
 
 		if (!cpu_online(cpu)) {
+#ifdef CONFIG_SEC_DEBUG_EXTRA_INFO
+			per_cpu(cpu_online_fail_cnt, cpu)++;
+#endif
 			pr_crit("CPU%u: failed to come online\n", cpu);
 			ret = -EIO;
 		}
@@ -848,11 +858,15 @@ void arch_irq_work_raise(void)
 /*
  * ipi_cpu_stop - handle IPI from smp_send_stop()
  */
-static void ipi_cpu_stop(unsigned int cpu)
+static void ipi_cpu_stop(unsigned int cpu, struct pt_regs *regs)
 {
 	set_cpu_online(cpu, false);
 
 	local_irq_disable();
+
+#ifdef CONFIG_SEC_DEBUG
+	sec_save_context(_THIS_CPU, regs);
+#endif
 
 	while (1)
 		cpu_relax();
@@ -916,7 +930,7 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 #ifdef CONFIG_MTK_SCHED_MONITOR
 		mt_trace_IPI_start(ipinr);
 #endif
-		ipi_cpu_stop(cpu);
+		ipi_cpu_stop(cpu, regs);
 #ifdef CONFIG_MTK_SCHED_MONITOR
 		mt_trace_IPI_end(ipinr);
 #endif

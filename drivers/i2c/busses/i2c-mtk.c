@@ -578,7 +578,7 @@ static int i2c_set_speed(struct mt_i2c *i2c, unsigned int clk_src_in_hz)
 	else
 		speed_hz = i2c->speed_hz;
 
-	if (speed_hz > MAX_FS_MODE_SPEED && !i2c->hs_only) {
+	if (speed_hz > MAX_FS_PLUS_MODE_SPEED && !i2c->hs_only) {
 		/* Set the hign speed mode register */
 		ret = mtk_i2c_calculate_speed(i2c, clk_src_in_hz,
 			MAX_FS_MODE_SPEED, &l_step_cnt, &l_sample_cnt);

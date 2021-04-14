@@ -174,6 +174,11 @@ void cmdq_dumpregs(struct cmdq_host *cq_host)
 	       cmdq_readl(cq_host, CQ_VENDOR_CFG));
 	pr_notice(DRV_NAME ": ===========================================\n");
 
+#if defined(CONFIG_MMC_TEST_MODE)
+	/* do not recover system if test mode is enabled */
+	BUG();
+#endif
+
 }
 
 /**
@@ -333,12 +338,19 @@ static int cmdq_enable(struct mmc_host *mmc)
 	cmdq_writel(cq_host, cmdq_readl(cq_host, CQSSC1) | SEND_QSR_INTERVAL,
 				CQSSC1);
 
+	/* disable write protection violation indication */
+	cmdq_writel(cq_host,
+			cmdq_readl(cq_host, CQRMEM) & ~(WP_VIOLATION | WP_ERASE_SKIP),
+			CQRMEM);
+
 	/* ensure the writes are done before enabling CQE */
 	mb();
 
 	cq_host->enabled = true;
 	mmc_host_clr_cq_disable(mmc);
 out:
+	if (err)
+		mmc_cmdq_error_logging(mmc->card, NULL, CQ_EN_DIS_ERR);
 	return err;
 }
 

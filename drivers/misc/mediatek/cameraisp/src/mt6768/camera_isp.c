@@ -103,6 +103,8 @@
 #include <mt-plat/met_drv.h>
 #endif
 
+#include <sysfs/imgsensor_sysfs.h>
+
 /*#define EP_STAGE*/
 #ifdef EP_STAGE
 #define EP_MARK_SMI
@@ -4498,7 +4500,7 @@ static signed int ISP_WriteReg(struct ISP_REG_IO_STRUCT *pRegIo)
 	/* unsigned char* pData = NULL; */
 	struct ISP_REG_STRUCT *pData = NULL;
 
-	if (pRegIo->Count > 0xFFFFFFFF) {
+	if ((pRegIo->Count <= 0) || (pRegIo->Count > 0xFFFFFFFF)) {
 		LOG_NOTICE("pRegIo->Count error");
 		Ret = -EFAULT;
 		goto EXIT;
@@ -6935,6 +6937,7 @@ static signed int ISP_WaitIrq(struct ISP_WAIT_IRQ_STRUCT *WaitIrq)
 			ISP_DumpSeninfReg();
 		}
 		Ret = -EFAULT;
+		update_mipi_sensor_err_cnt();
 		goto EXIT;
 	}
 

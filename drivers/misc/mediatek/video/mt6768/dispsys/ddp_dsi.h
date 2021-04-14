@@ -214,6 +214,11 @@ void DSI_set_cmdq_V2(enum DISP_MODULE_ENUM module, struct cmdqRecStruct *cmdq,
 
 int dsi_enable_irq(enum DISP_MODULE_ENUM module, void *handle,
 	unsigned int enable);
+void DSI_set_cmdq(enum DISP_MODULE_ENUM module, struct cmdqRecStruct *cmdq,
+	unsigned int *pdata, unsigned int queue_size,
+	unsigned char force_update);
+
+int ddp_dsi_dump(enum DISP_MODULE_ENUM module, int level);
 int ddp_dsi_power_on(enum DISP_MODULE_ENUM module, void *cmdq_handle);
 int dsi_basic_irq_enable(enum DISP_MODULE_ENUM module, void *cmdq);
 extern int mipi_clk_change(int msg, int en);

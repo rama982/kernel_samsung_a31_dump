@@ -1170,10 +1170,6 @@ struct LCM_DRIVER *lcm_driver_list[] = {
 	&hx83112b_fhdp_dsi_cmd_auo_rt5081_hdp_lcm_drv,
 #endif
 
-#if defined(HX83112B_FHDP_DSI_CMD_AUO_RT5081_HDP_1560)
-	&hx83112b_fhdp_dsi_cmd_auo_rt5081_hdp_1560_lcm_drv,
-#endif
-
 #if defined(HX83112B_FHDP_DSI_VDO_AUO_RT5081_HDP)
 	&hx83112b_fhdp_dsi_vdo_auo_rt5081_hdp_lcm_drv,
 #endif
@@ -1210,20 +1206,6 @@ struct LCM_DRIVER *lcm_driver_list[] = {
 #if defined(OTM1911A_FHDP_DSI_VDO_HDP_TRULY_RT4801)
 	&otm1911a_fhdp_dsi_vdo_hdp_truly_rt4801_lcm_drv,
 #endif
-
-/*6768 OTM*/
-#if defined(OTM1911A_FHDP_DSI_VDO_TRULY_RT5081)
-	&otm1911a_fhdp_dsi_vdo_truly_rt5081_lcm_drv,
-#endif
-
-#if defined(OTM1911A_FHDP_DSI_VDO_TRULY_RT5081_HDP)
-	&otm1911a_fhdp_dsi_vdo_truly_rt5081_hdp_lcm_drv,
-#endif
-
-#if defined(OTM1911A_FHDP_DSI_VDO_TRULY_RT5081_HDP_1560)
-	&otm1911a_fhdp_dsi_vdo_truly_rt5081_hdp_1560_lcm_drv,
-#endif
-
 #if defined(TD4320_FHDP_DSI_VDO_AUO_RT4801)
 	&td4320_fhdp_dsi_vdo_auo_rt4801_lcm_drv,
 #endif
@@ -1239,14 +1221,6 @@ struct LCM_DRIVER *lcm_driver_list[] = {
 
 #if defined(NT36672A_FHDP_DSI_VDO_AUO_CPHY)
 	&nt36672a_fhdp_dsi_vdo_auo_cphy_lcm_drv,
-#endif
-
-#if defined(NT36672C_FHDP_DSI_VDO_AUO_CPHY)
-	&nt36672c_fhdp_dsi_vdo_auo_cphy_lcm_drv,
-#endif
-
-#if defined(NT36672C_FHDP_DSI_VDO_AUO_CPHY_90HZ)
-	&nt36672c_fhdp_dsi_vdo_auo_cphy_90hz_lcm_drv,
 #endif
 
 #if defined(OTM1287_WXGA_DSI_VDO_AUO_GUOXIAN)
@@ -1271,6 +1245,22 @@ struct LCM_DRIVER *lcm_driver_list[] = {
 
 #if defined(NT51021H_WUXGA_VDO_ONCELL_BOE)
 	&nt51021h_wuxga_vdo_oncell_boe_lcm_drv,
+#endif
+
+#if defined(EA8076_FHDP_DSI_CMD)
+	&ea8076_fhdp_dsi_cmd_lcm_drv,
+#endif
+
+#if defined(EA8076G_FHDPLUS_DIS_CMD)
+	&ea8076g_fhdplus_dis_cmd_lcm_drv,
+#endif
+
+#if defined(CONFIG_SMCDSD_PANEL)
+	&smcdsd_panel_drv,
+#endif
+
+#if defined(EA8076G_FHDPLUS_DIS_CMD_A31)
+	&ea8076g_fhdplus_dis_cmd_a31_lcm_drv,
 #endif
 };
 
@@ -1351,6 +1341,10 @@ unsigned char lcm_name_list[][128] = {
 
 #if defined(NT35695B_FHD_DSI_VDO_AUO_RT5081_HDP_20_9)
 	"nt35695B_fhd_dsi_vdo_auo_rt5081_hdp_20_9_drv",
+#endif
+
+#if defined(EA8076_FHDP_DSI_CMD)
+	"ea8076_fhdp_dsi_cmd_lcm_drv",
 #endif
 };
 

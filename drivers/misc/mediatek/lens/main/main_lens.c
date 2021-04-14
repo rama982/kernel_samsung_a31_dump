@@ -115,10 +115,12 @@ static struct stAF_DrvList g_stAF_DrvList[MAX_NUM_OF_LENS] = {
 	 LC898212XDAF_Release, LC898212XDAF_GetFileName, NULL},
 	{1, AFDRV_DW9814AF, DW9814AF_SetI2Cclient, DW9814AF_Ioctl,
 	 DW9814AF_Release, DW9814AF_GetFileName, NULL},
-	{1, AFDRV_DW9800WAF, DW9800WAF_SetI2Cclient, DW9800WAF_Ioctl,
-	 DW9800WAF_Release, NULL, NULL},
 	{1, AFDRV_FP5510E2AF, FP5510E2AF_SetI2Cclient, FP5510E2AF_Ioctl,
 	 FP5510E2AF_Release, FP5510E2AF_GetFileName, NULL},
+	{1, AFDRV_FP5529AF, FP5529AF_SetI2Cclient, FP5529AF_Ioctl,
+	 FP5529AF_Release, FP5529AF_GetFileName, NULL},
+
+
 	{1, AFDRV_DW9718AF, DW9718AF_SetI2Cclient, DW9718AF_Ioctl,
 	 DW9718AF_Release, DW9718AF_GetFileName, NULL},
 	{1, AFDRV_LC898212AF, LC898212AF_SetI2Cclient, LC898212AF_Ioctl,
@@ -173,7 +175,7 @@ void AFRegulatorCtrl(int Stage)
 				kd_node = lens_device->of_node;
 				lens_device->of_node = node;
 
-				#if defined(CONFIG_MACH_MT6765)
+				#if 1//defined(CONFIG_MACH_MT6765)
 				regVCAMAF =
 					regulator_get(lens_device, "vldo28");
 				#else
@@ -531,8 +533,10 @@ static int AF_Open(struct inode *a_pstInode, struct file *a_pstFile)
 	spin_unlock(&g_AF_SpinLock);
 
 #if !defined(CONFIG_MTK_LEGACY)
-	AFRegulatorCtrl(1);
+//	AFRegulatorCtrl(1);
 #endif
+	AFRegulatorCtrl(0);
+	AFRegulatorCtrl(1);
 
 	/* OIS/EIS Timer & Workqueue */
 	/* init work queue */
@@ -728,7 +732,7 @@ static int AF_i2c_probe(struct i2c_client *client,
 	spin_lock_init(&g_AF_SpinLock);
 
 #if !defined(CONFIG_MTK_LEGACY)
-	AFRegulatorCtrl(0);
+//	AFRegulatorCtrl(0);
 #endif
 
 	LOG_INF("Attached!!\n");

@@ -42,6 +42,10 @@ struct fscrypt_name {
 /* Maximum value for the third parameter of fscrypt_operations.set_context(). */
 #define FSCRYPT_SET_CONTEXT_MAX_SIZE	28
 
+#if defined(CONFIG_FSCRYPT_SDP) || defined(CONFIG_DDAR)
+#define FSCRYPT_SET_CONTEXT_MAX_SIZE	32
+#endif
+
 #if __FS_HAS_ENCRYPTION
 #include <linux/fscrypt_supp.h>
 #else

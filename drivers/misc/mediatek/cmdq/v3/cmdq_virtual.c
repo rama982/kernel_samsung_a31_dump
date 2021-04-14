@@ -316,7 +316,7 @@ int cmdq_virtual_disp_thread(enum CMDQ_SCENARIO_ENUM scenario)
 	case CMDQ_SCENARIO_DISP_CONFIG_SUB_PQ:
 	case CMDQ_SCENARIO_DISP_CONFIG_SUB_PWM:
 	case CMDQ_SCENARIO_SUB_MEMOUT:
-		return 1;
+		return 2;
 
 	case CMDQ_SCENARIO_MHL_DISP:
 		return 5;

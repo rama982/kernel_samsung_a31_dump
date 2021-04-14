@@ -61,6 +61,8 @@ extern unsigned int ap_fps_changed;
 extern unsigned int arr_fps_backup;
 extern unsigned int arr_fps_enable;
 extern unsigned int round_corner_offset_enable;
+extern int def_data_rate;
+extern int def_dsi_hbp;
 
 struct DISP_LAYER_INFO {
 	unsigned int id;
@@ -266,6 +268,11 @@ struct display_primary_path_context {
 	cmdqBackupSlotHandle dsi_vfp_line;
 	cmdqBackupSlotHandle night_light_params;
 
+#if defined(CONFIG_SMCDSD_PANEL)
+	wait_queue_head_t framedone_wait;
+	ktime_t framedone_timestamp;
+#endif
+
 	int is_primary_sec;
 	int primary_display_scenario;
 #ifdef CONFIG_MTK_DISPLAY_120HZ_SUPPORT
@@ -408,6 +415,11 @@ int primary_display_get_original_height(void);
 int primary_display_lcm_ATA(void);
 int primary_display_setbacklight(unsigned int level);
 int primary_display_setbacklight_nolock(unsigned int level);
+int primary_display_set_lcm_hbm(bool en);
+int primary_display_hbm_wait(bool en);
+int primary_display_setlcm_func_call(
+	void (*func4)(void *, void *, void *, void *),
+	void *data1, void *data2, void *data3, void *data4);
 int primary_display_pause(PRIMARY_DISPLAY_CALLBACK callback,
 	unsigned int user_data);
 int primary_display_switch_dst_mode(int mode);
@@ -493,6 +505,13 @@ int primary_display_config_full_roi(struct disp_ddp_path_config *pconfig,
 	disp_path_handle disp_handle,
 		struct cmdqRecStruct *cmdq_handle);
 int primary_display_set_scenario(int scenario);
+int primary_display_dsi_set_withcmdq(unsigned int cmd, unsigned char count,
+		unsigned char *para_list, unsigned char force_update);
+int primary_display_dsi_set_withrawcmdq(unsigned int *pdata,
+	unsigned int queue_size, unsigned char force_update);
+int primary_display_dsi_read_cmdq_cmd(unsigned int data_id,
+	unsigned int offset, unsigned int cmd, unsigned char *buffer,
+	unsigned char size);
 enum DISP_MODULE_ENUM _get_dst_module_by_lcm(struct disp_lcm_handle *plcm);
 extern void check_mm0_clk_sts(void);
 

@@ -2534,7 +2534,7 @@ static int rpmb_gp_open_session(void)
 	MSG(INFO, "%s start\n", __func__);
 
 	do {
-		msleep(2000);
+		msleep(500);
 
 		/* open device */
 		mc_ret = mc_open_device(rpmb_gp_devid);
@@ -2602,9 +2602,9 @@ static int rpmb_gp_open_session(void)
 		else
 			break;
 
-	} while (cnt < 60);
+	} while (cnt < 240);
 
-	if (cnt >= 60)
+	if (cnt >= 240)
 		MSG(ERR, "%s, open session failed!!!\n", __func__);
 
 

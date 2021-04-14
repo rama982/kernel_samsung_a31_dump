@@ -271,16 +271,24 @@ class KpdObj(ModuleObj):
         gen_str += '''\tmediatek,kpd-hw-map-num = <%d>;\n''' %(KpdData.get_row() * KpdData.get_col())
         gen_str += '''\tmediatek,kpd-hw-init-map = <'''
 
+        count = 0
         if KpdData.get_keyType() == 'NORMAL_TYPE':
             for key in KpdData.get_matrix():
                 idx = KpdData._keyValueMap[key]
                 gen_str += '''%d ''' %(idx)
+                count += 1
+                if count % 8 == 0:
+                    gen_str = gen_str[:-1]
+                    gen_str += '''\\'''
+                    gen_str += '''\n\t\t'''
+            gen_str = gen_str[:-3]
+
         else:
             for key in KpdData.get_matrix_ext():
                 idx = KpdData._keyValueMap[key]
                 gen_str += '''%d ''' %(idx)
 
-        gen_str.rstrip()
+        gen_str = gen_str[:-1]
         gen_str += '''>;\n'''
         gen_str += '''\tmediatek,kpd-pwrkey-eint-gpio = <%d>;\n''' %(KpdData.get_gpioNum())
         gen_str += '''\tmediatek,kpd-pwkey-gpio-din  = <%d>;\n''' %(int(KpdData.get_gpioDinHigh()))

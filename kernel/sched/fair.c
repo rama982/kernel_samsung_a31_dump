@@ -62,6 +62,10 @@ unsigned int normalized_sysctl_sched_latency		= 6000000ULL;
  * Enable/disable honoring sync flag in energy-aware wakeups.
  */
 unsigned int sysctl_sched_sync_hint_enable = 1;
+#ifdef CONFIG_PRIO_PINNED_BOOST
+unsigned int sysctl_sched_pinned_boost_enable = 1;
+const unsigned int target_prio_pinned_boost = 110;
+#endif
 
 #ifdef CONFIG_MTK_SCHED_BOOST
 unsigned int sysctl_sched_isolation_hint_enable;
@@ -804,6 +808,14 @@ void post_init_entity_util_avg(struct sched_entity *se)
 	struct sched_avg *sa = &se->avg;
 	long cpu_scale = arch_scale_cpu_capacity(NULL, cpu_of(rq_of(cfs_rq)));
 	long cap = (long)(cpu_scale - cfs_rq->avg.util_avg) / 2;
+#ifdef CONFIG_MTK_TC10_FEATURE
+	int forked_ramup_factor = sched_forked_ramup_factor();
+
+	if (forked_ramup_factor != 0) {
+		cap = (long)(cpu_scale - cfs_rq->avg.util_avg) *
+				forked_ramup_factor / 100;
+	}
+#endif
 
 	if (cap > 0) {
 		if (cfs_rq->avg.util_avg != 0) {
@@ -7493,7 +7505,12 @@ static int start_cpu(struct task_struct *p, bool prefer_idle,
 
 	if (rd->min_cap_orig_cpu < 0)
 		return -1;
-
+#ifdef CONFIG_PRIO_PINNED_BOOST
+	if (sysctl_sched_pinned_boost_enable &&
+	    schedtune_task_pinned_boost(p) &&
+	    (p->prio <= target_prio_pinned_boost))
+		return rd->max_cap_orig_cpu;
+#endif
 	if (boosted && (task_util(p) >= stune_task_threshold))
 		return boosted ? rd->max_cap_orig_cpu : rd->min_cap_orig_cpu;
 
@@ -7549,7 +7566,16 @@ static inline int find_best_target(struct task_struct *p, int *backup_cpu,
 	int min_cpu = -1;
 	int backup_min_cpu = -1;
 	bool turning = false;
+#ifdef CONFIG_PRIO_PINNED_BOOST
+	int pin_target_cpu = -1;
+	unsigned long target_boost_spare_cap = 0;
+	bool pin_boost_enable = false;
+	cpumask_t *pinned_mask;
 
+	pin_boost_enable = (sysctl_sched_pinned_boost_enable &&
+			    schedtune_task_pinned_boost(p) &&
+			    (p->prio <= target_prio_pinned_boost));
+#endif
 	*backup_cpu = -1;
 
 	/*
@@ -7579,8 +7605,18 @@ static inline int find_best_target(struct task_struct *p, int *backup_cpu,
 
 	/* Scan CPUs in all SDs */
 	sg = sd->groups;
+#ifdef CONFIG_PRIO_PINNED_BOOST
+	if (pin_boost_enable)
+		pinned_mask = sched_group_span(sg);
+	else
+		pinned_mask = &p->cpus_allowed;
+
+	do {
+		for_each_cpu_and(i, pinned_mask, sched_group_span(sg)) {
+#else
 	do {
 		for_each_cpu_and(i, &p->cpus_allowed, sched_group_span(sg)) {
+#endif
 			unsigned long capacity_curr = capacity_curr_of(i);
 			unsigned long capacity = capacity_of(i);
 			unsigned long capacity_orig = capacity_orig_of(i);
@@ -7621,6 +7657,13 @@ static inline int find_best_target(struct task_struct *p, int *backup_cpu,
 			 * enqueued here.
 			 */
 			spare_cap = capacity - new_util;
+#ifdef CONFIG_PRIO_PINNED_BOOST
+			if ((spare_cap > target_boost_spare_cap) &&
+			    pin_boost_enable) {
+				target_boost_spare_cap = spare_cap;
+				pin_target_cpu = i;
+			}
+#endif
 
 			if (idle_cpu(i))
 				idle_idx = idle_get_state_idx(cpu_rq(i));
@@ -7912,7 +7955,10 @@ static inline int find_best_target(struct task_struct *p, int *backup_cpu,
 		*backup_cpu = prefer_idle
 		? best_active_cpu
 		: best_idle_cpu;
-
+#ifdef CONFIG_PRIO_PINNED_BOOST
+	if (target_cpu == -1 && pin_boost_enable)
+		target_cpu = pin_target_cpu;
+#endif
 	trace_sched_find_best_target(p, prefer_idle, min_util, cpu,
 				     best_idle_cpu, best_active_cpu,
 				     target_cpu);
@@ -9111,7 +9157,14 @@ static
 int can_migrate_task(struct task_struct *p, struct lb_env *env)
 {
 	int tsk_cache_hot;
+#ifdef CONFIG_PRIO_PINNED_BOOST
+	struct root_domain *rd = cpu_rq(smp_processor_id())->rd;
+	bool pin_boost_enable = false;
 
+	pin_boost_enable = (sysctl_sched_pinned_boost_enable &&
+			    schedtune_task_pinned_boost(p) &&
+			    (p->prio <= target_prio_pinned_boost));
+#endif
 	lockdep_assert_held(&env->src_rq->lock);
 
 	/*
@@ -9121,6 +9174,7 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 	 * 3) running (obviously), or
 	 * 4) are cache-hot on their current CPU.
 	 */
+
 	if (throttled_lb_pair(task_group(p), env->src_cpu, env->dst_cpu))
 		return 0;
 
@@ -9161,6 +9215,14 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 		schedstat_inc(p->se.statistics.nr_failed_migrations_running);
 		return 0;
 	}
+
+#ifdef CONFIG_PRIO_PINNED_BOOST 
+	if (pin_boost_enable &&
+	    capacity_of(task_cpu(p)) == capacity_of(rd->max_cap_orig_cpu) &&
+	    capacity_of(env->dst_cpu) != capacity_of(rd->max_cap_orig_cpu)) {
+		return 0;
+	}
+#endif
 
 	/*
 	 * Aggressive migration if:
@@ -12587,6 +12649,10 @@ __init void init_sched_fair_class(void)
 #endif /* SMP */
 
 	arch_build_cpu_topology_domain();
+
+#ifdef CONFIG_PRIO_PINNED_BOOST
+	sysctl_sched_pinned_boost_enable = 0;
+#endif
 }
 #include "eas_plus.c"
 #include "hmp.c"

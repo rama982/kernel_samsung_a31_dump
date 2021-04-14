@@ -132,9 +132,12 @@ int update_userlimit_cpu_freq(int kicker, int num_cluster
 			final_freq[j].max
 				= MAX(freq_set[i][j].max, final_freq[j].max);
 #endif
+
+#ifndef CONFIG_CPU_FREQ_LIMIT
 			if (final_freq[j].min > final_freq[j].max &&
 					final_freq[j].max != -1)
 				final_freq[j].max = final_freq[j].min;
+#endif
 		}
 	}
 
@@ -323,11 +326,26 @@ static int perfmgr_boot_freq_proc_show(struct seq_file *m, void *v)
 /***************************************/
 static int perfmgr_current_freq_proc_show(struct seq_file *m, void *v)
 {
+#ifdef CONFIG_SEC_PM
+	int i, k;
+
+	for_each_perfmgr_clusters(i)
+		seq_printf(m, "cluster %d min:%d max:%d\n",
+				i, current_freq[i].min, current_freq[i].max);
+
+	seq_printf(m, "\n");
+	for(k = 0; k < CPU_MAX_KIR; k++){
+		for_each_perfmgr_clusters(i)
+			seq_printf(m, "KIR[%d] cluster %d min:%d max:%d\n",
+					k, i, freq_set[k][i].min, freq_set[k][i].max);
+	}
+#else
 	int i;
 
 	for_each_perfmgr_clusters(i)
 		seq_printf(m, "cluster %d min:%d max:%d\n",
 				i, current_freq[i].min, current_freq[i].max);
+#endif
 
 	return 0;
 }

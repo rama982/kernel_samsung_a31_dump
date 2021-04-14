@@ -21,7 +21,6 @@
 #include <linux/printk.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
-#include <log_store_kernel.h>
 
 #include "internal.h"
 #include "mtk_sched_mon.h"
@@ -174,7 +173,6 @@ static void bootup_finish(void)
 #ifdef CONFIG_MTK_SCHED_MON_DEFAULT_ENABLE
 	mt_sched_monitor_switch(1);
 #endif
-	set_logtoomuch_enable(1);
 }
 
 static void mt_bootprof_switch(int on)
@@ -194,7 +192,6 @@ static void mt_bootprof_switch(int on)
 			enabled = 0;
 			timestamp_off = ts;
 			boot_finish = true;
-			log_store_bootup();
 			bootup_finish();
 		}
 	}

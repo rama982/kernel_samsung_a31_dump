@@ -222,6 +222,8 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_WM9713 if SND_SOC_AC97_BUS
 	select SND_SOC_RT5509 if I2C
 	select SND_SOC_MT6660 if I2C
+	select SND_SOC_SMA1301 if I2C
+	select SND_SOC_SMA1303 if I2C
 	select SND_SOC_TFA9874 if I2C
         help
           Normally ASoC codec drivers are only built if a machine driver which
@@ -1170,6 +1172,24 @@ config SND_SOC_MT6660
 	  amplifier which contain speaker protection,
 	  multi-band DRC, equalizer function. It would
 	  be set to yes if device with MT6660 on it.
+
+config SND_SOC_SMA1301
+	tristate "Silicon Mitus SMA1301 speaker amplifier"
+	depends on I2C
+	help
+	  Config of SMA1301. It is a Smart power
+	  amplifier which contain speaker protection,
+	  multi-band DRC, equalizer function. It would
+	  be set to yes if device with SMA1301 on it.
+
+config SND_SOC_SMA1303
+	tristate "Silicon Mitus SMA1303 speaker amplifier"
+	depends on I2C
+	help
+	  Config of SMA1303. It is a Smart power
+	  amplifier which contain speaker protection,
+	  multi-band DRC, equalizer function. It would
+	  be set to yes if device with SMA1303 on it.
 
 config SND_SOC_TFA9874
 	tristate "NXP TFA9874 speaker amplifier"

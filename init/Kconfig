@@ -697,7 +697,7 @@ menu "FAIR Scheuler tunables"
 
 choice
 	prompt "Utilization's PELT half-Life"
-	default PELT_UTIL_HALFLIFE_32
+	default PELT_UTIL_HALFLIFE_16
 	help
 	  Allows choosing one of the possible values for the PELT half-life to
 	  be used for the update of the utilization of tasks and CPUs.
@@ -1840,6 +1840,14 @@ config SYSTEM_DATA_VERIFICATION
 	  module verification, kexec image verification and firmware blob
 	  verification.
 
+config DEFERRED_INITCALLS
+	bool "Deferred initcalls support"
+	default n
+	help
+	  Say 'y' here to include support for deferred initcalls.
+	  If some module init functions set as deferred initcall, they aren't
+	  called until /proc/deferred_initcalls is read.
+
 config PROFILING
 	bool "Profiling support"
 	help
@@ -2113,3 +2121,6 @@ config ASN1
 	  functions to call on what tags.
 
 source "kernel/Kconfig.locks"
+
+config PRIO_PINNED_BOOST
+	def_bool y

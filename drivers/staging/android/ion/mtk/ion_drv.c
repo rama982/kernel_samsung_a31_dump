@@ -713,6 +713,42 @@ static long ion_sys_ioctl(struct ion_client *client, unsigned int cmd,
 			ion_drv_put_kernel_handle(kernel_handle);
 		}
 		break;
+	case ION_SYS_GET_IOVA:
+	{
+		struct ion_buffer *buffer;
+		struct ion_handle *kernel_handle;
+		ion_phys_addr_t real_phys = 0;
+		size_t len = 0;
+
+		kernel_handle =
+			ion_drv_get_handle(client,
+					   param.get_phys_param.handle,
+					   param.get_phys_param.kernel_handle,
+					   from_kernel);
+		if (IS_ERR(kernel_handle)) {
+			IONMSG("ION_SYS_GET_IOVA fail!\n");
+			ret = -EINVAL;
+			break;
+		}
+		buffer = ion_handle_buffer(kernel_handle);
+		if ((int)buffer->heap->type != ION_HEAP_TYPE_DMA_RESERVED) {
+			IONMSG("heap %d don't support get read phys\n",
+			       buffer->heap->type);
+			ion_drv_put_kernel_handle(kernel_handle);
+			param.get_phys_param.phy_addr = 0;
+			param.get_phys_param.len = 0;
+			ret = -EINVAL;
+			break;
+		}
+
+		ret = ion_dma_reserved_heap_iova(buffer->heap,
+						 buffer, &real_phys, &len);
+		param.get_phys_param.phy_addr = real_phys;
+		param.get_phys_param.len = len;
+
+		ion_drv_put_kernel_handle(kernel_handle);
+	}
+		break;
 	case ION_SYS_SET_CLIENT_NAME:
 		ion_sys_copy_client_name(param.client_name_param.name,
 					 client->dbg_name);
@@ -768,6 +804,35 @@ static long ion_custom_ioctl(struct ion_client *client, unsigned int cmd,
 	return _ion_ioctl(client, cmd, arg, 0);
 }
 
+int dump_heap_info_to_log(struct ion_heap *heap, int log_level)
+{
+	struct seq_file s;
+	char *buf;
+
+	if (!heap->debug_show)
+		return 0;
+
+	buf = kzalloc(PAGE_SIZE, GFP_KERNEL | __GFP_NOWARN);
+	if (!buf)
+		return -ENOMEM;
+
+	memset(&s, 0, sizeof(s));
+	s.buf = buf;
+	s.size = PAGE_SIZE;
+	mutex_init(&s.lock);
+
+	if (heap->debug_show)
+		heap->debug_show(heap, &s, NULL);
+
+	if (log_level <= LOGLEVEL_WARNING)
+		pr_info("%s\n", s.buf);
+	else
+		pr_debug("%s\n", s.buf);
+
+	kfree(s.buf);
+	return 0;
+}
+
 #ifdef CONFIG_PM
 /* FB event notifier */
 static int ion_fb_event(struct notifier_block *notifier, unsigned long event,
@@ -819,6 +884,9 @@ struct ion_heap *ion_mtk_heap_create(struct ion_platform_heap *heap_data)
 	case ION_HEAP_TYPE_MULTIMEDIA_SEC:
 		heap = ion_sec_heap_create(heap_data);
 		break;
+	case ION_HEAP_TYPE_DMA_RESERVED:
+		heap = ion_dma_reserved_heap_create(heap_data);
+		break;
 	default:
 		heap = ion_heap_create(heap_data);
 	}
@@ -849,6 +917,9 @@ void ion_mtk_heap_destroy(struct ion_heap *heap)
 		break;
 	case ION_HEAP_TYPE_MULTIMEDIA_SEC:
 		ion_sec_heap_destroy(heap);
+		break;
+	case ION_HEAP_TYPE_DMA_RESERVED:
+		ion_dma_reserved_heap_destroy(heap);
 		break;
 	default:
 		ion_heap_destroy(heap);
@@ -1162,6 +1233,26 @@ static struct ion_platform_heap ion_drv_platform_heaps[] = {
 	 .align = 0x1000, /* this must not be 0 if enable */
 	 .priv = NULL,
 	 },
+	{
+	 .type = ION_HEAP_TYPE_DMA_RESERVED,
+	 .id = ION_HEAP_TYPE_DMA_RESERVED,
+	 .name = "ion_dma_reserved_heap",
+	 .base = 0,
+	 .size = 3 * 1024 * 1024, /* size <= 4M !!!*/
+	 .align = 0x1000,
+	 .priv = NULL,
+	 },
+#ifdef CONFIG_ION_RBIN_HEAP
+	{
+	 .type = (unsigned int)ION_HEAP_TYPE_RBIN,
+	 .id = ION_HEAP_TYPE_RBIN,
+	 .name = "ion_rbin_heap",
+	 .base = 0,
+	 .size = 0,
+	 .align = 0,
+	 .priv = NULL,
+	 },
+#endif
 };
 
 struct ion_platform_data ion_drv_platform_data = {
@@ -1221,6 +1312,33 @@ static int __init ion_reserve_memory_to_camera(
 RESERVEDMEM_OF_DECLARE(ion_camera_reserve,
 		       "mediatek,ion-carveout-heap",
 		       ion_reserve_memory_to_camera);
+
+#ifdef CONFIG_ION_RBIN_HEAP
+static int __init ion_reserve_memory_to_rbin(
+	struct reserved_mem *mem)
+{
+	int i;
+
+	for (i = 0; i < ion_drv_platform_data.nr; i++) {
+		if (ion_drv_platform_data.heaps[i].id ==
+		    ION_HEAP_TYPE_RBIN) {
+			ion_drv_platform_data.heaps[i].base =
+				mem->base;
+			ion_drv_platform_data.heaps[i].size =
+				mem->size;
+		}
+	}
+	pr_info("%s: name:%s,base:%llx,size:0x%llx\n",
+		__func__, mem->name,
+		(unsigned long long)mem->base,
+		(unsigned long long)mem->size);
+	return 0;
+}
+
+RESERVEDMEM_OF_DECLARE(ion_camera_rbin,
+		       "mediatek,ion-rbin-heap",
+		       ion_reserve_memory_to_rbin);
+#endif
 
 static int __init ion_init(void)
 {

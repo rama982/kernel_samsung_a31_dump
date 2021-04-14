@@ -1166,7 +1166,7 @@ static ssize_t ffs_epfile_io(struct file *file, struct ffs_io_data *io_data)
 			if (req->actual == 24) {
 				char *data = req->buf;
 
-				if (data[0] == 'C' && data[1] == 'N'
+				if (data && data[0] == 'C' && data[1] == 'N'
 						&& data[2] == 'X'
 						&& data[3] == 'N') {
 					cnxn_cnt++;
@@ -3695,7 +3695,7 @@ static struct usb_function *ffs_alloc(struct usb_function_instance *fi)
 	if (unlikely(!func))
 		return ERR_PTR(-ENOMEM);
 
-	func->function.name    = "Function FS Gadget";
+	func->function.name    = "adb";
 
 	func->function.bind    = ffs_func_bind;
 	func->function.unbind  = ffs_func_unbind;

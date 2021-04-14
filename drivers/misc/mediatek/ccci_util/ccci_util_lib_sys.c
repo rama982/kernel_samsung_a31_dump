@@ -298,6 +298,15 @@ static ssize_t kcfg_setting_show(char *buf)
 			"[ccci_drv_ver]:V1\n");
 	curr += actual_write;
 
+#ifdef CONFIG_MTK_SRIL_SUPPORT
+		actual_write = snprintf(&buf[curr], 4096 - curr,
+			"[MTK_SRIL_SUPPORT]:1\n");
+#else
+		actual_write = snprintf(&buf[curr], 4096 - curr,
+			"[MTK_SRIL_SUPPORT]:0\n");
+#endif
+		curr += actual_write;
+
 	/* Add total size to tail */
 	actual_write = snprintf(&buf[curr],
 		4096 - curr, "total:%d\n", curr);

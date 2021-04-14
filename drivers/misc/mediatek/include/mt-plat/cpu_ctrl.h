@@ -25,6 +25,11 @@ enum {
 	CPU_KIR_PERFTOUCH,
 	CPU_KIR_USB,
 	CPU_KIR_AMMS,
+#ifdef CONFIG_CPU_FREQ_LIMIT
+	CPU_KIR_SEC_LIMIT,
+	CPU_KIR_SEC_TOUCH,
+	CPU_KIR_SEC_FINGER,
+#endif
 	CPU_MAX_KIR
 };
 extern unsigned int mt_cpufreq_get_freq_by_idx(int id, int idx);

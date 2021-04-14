@@ -131,6 +131,25 @@ static inline void *fscrypt_crypt_info_act(void *ci, int act)
 	return NULL;
 }
 
+static inline int fscrypt_get_encryption_key(struct inode *inode,
+						struct fscrypt_key *key)
+{
+	return -EOPNOTSUPP;
+}
+#ifdef CONFIG_SDP_KEY_DUMP
+static inline int fscrypt_get_encryption_key_classified(struct inode *inode,
+						struct fscrypt_key *key)
+{
+	return -EOPNOTSUPP;
+}
+#endif
+static inline int fscrypt_get_encryption_kek(struct inode *inode,
+						struct fscrypt_info *crypt_info,
+						struct fscrypt_key *kek)
+{
+	return -EOPNOTSUPP;
+}
+
  /* fname.c */
 static inline int fscrypt_setup_filename(struct inode *dir,
 					 const struct qstr *iname,

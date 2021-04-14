@@ -1082,6 +1082,13 @@ struct disp_lcm_handle *disp_lcm_probe(char *plcm_name,
 			DISPCHECK("LCM Name NULL\n");
 		} else {
 			lcm_drv = lcm_driver_list[0];
+#if defined(CONFIG_SMCDSD_PANEL)
+			/* temporary code */
+			if (strcmp(lcm_drv->name, plcm_name)) {
+				DISPCHECK("LCM Driver defined in kernel(%s) is different with LK(%s)\n", lcm_drv->name, plcm_name);
+				lcm_drv->name = kstrdup(plcm_name, GFP_KERNEL);
+			}
+#endif
 			if (strcmp(lcm_drv->name, plcm_name)) {
 				DISPERR(
 					"FATAL ERROR!!!LCM Driver defined in kernel(%s) is different with LK(%s)\n",
@@ -1149,6 +1156,13 @@ struct disp_lcm_handle *disp_lcm_probe(char *plcm_name,
 #if defined(MTK_LCM_DEVICE_TREE_SUPPORT)
 	if (isLCMDtFound == true)
 		load_lcm_resources_from_DT(plcm->drv);
+#endif
+
+#if defined(CONFIG_LCD_GENERIC)
+	/*It is added for gen panel's state check at first boot up*/
+	if (plcm->drv->reduced_init)
+		plcm->drv->reduced_init(plcm->is_inited);
+	/*end*/
 #endif
 
 	plcm->drv->get_params(plcm->params);
@@ -1418,16 +1432,34 @@ int disp_lcm_suspend(struct disp_lcm_handle *plcm)
 			DISPERR("FATAL ERROR, lcm_drv->suspend is null\n");
 			return -1;
 		}
+#if !defined(CONFIG_SMCDSD_PANEL)
+		if (lcm_drv->suspend_power)
+			lcm_drv->suspend_power();
+#endif
+		return 0;
+	}
+	DISPERR("lcm_drv is null\n");
+	return -1;
+}
+
+#if defined(CONFIG_SMCDSD_PANEL)
+int disp_lcm_suspend_power(struct disp_lcm_handle *plcm)
+{
+	struct LCM_DRIVER *lcm_drv = NULL;
+
+	DISPFUNC();
+	if (_is_lcm_inited(plcm)) {
+		lcm_drv = plcm->drv;
 
 		if (lcm_drv->suspend_power)
 			lcm_drv->suspend_power();
-
 
 		return 0;
 	}
 	DISPERR("lcm_drv is null\n");
 	return -1;
 }
+#endif
 
 int disp_lcm_resume(struct disp_lcm_handle *plcm)
 {
@@ -1461,6 +1493,10 @@ int disp_lcm_aod(struct disp_lcm_handle *plcm, int enter)
 	DISPMSG("%s, enter:%d\n", __func__, enter);
 	if (_is_lcm_inited(plcm)) {
 		lcm_drv = plcm->drv;
+#if defined(CONFIG_SMCDSD_PANEL)
+		if (lcm_drv->resume_power && enter)
+			lcm_drv->resume_power();
+#endif
 		if (lcm_drv->aod) {
 			lcm_drv->aod(enter);
 		} else {
@@ -1520,6 +1556,165 @@ int disp_lcm_set_backlight(struct disp_lcm_handle *plcm,
 		lcm_drv->set_backlight_cmdq(handle, level);
 	} else {
 		DISPERR("FATAL ERROR, lcm_drv->set_backlight is null\n");
+		return -1;
+	}
+
+	return 0;
+}
+
+int disp_lcm_set_hbm_wait(bool wait, struct disp_lcm_handle *plcm)
+{
+	if (!_is_lcm_inited(plcm)) {
+		DISPERR("lcm_drv is null\n");
+		return -1;
+	}
+
+	if (!plcm->drv->set_hbm_wait) {
+		DISPERR("FATAL ERROR, lcm_drv->set_hbm_wait is null\n");
+		return -1;
+	}
+
+	pr_info("%s %d\n", __func__, wait);
+	plcm->drv->set_hbm_wait(wait);
+	return 0;
+}
+
+int disp_lcm_get_hbm_wait(struct disp_lcm_handle *plcm)
+{
+	if (!_is_lcm_inited(plcm)) {
+		DISPERR("lcm_drv is null\n");
+		return -1;
+	}
+
+	if (!plcm->drv->get_hbm_wait) {
+		DISPERR("FATAL ERROR, lcm_drv->get_hbm_wait is null\n");
+		return -1;
+	}
+
+	return plcm->drv->get_hbm_wait();
+}
+
+int disp_lcm_set_hbm(bool en, struct disp_lcm_handle *plcm, void *qhandle)
+{
+	if (!_is_lcm_inited(plcm)) {
+		DISPERR("lcm_drv is null\n");
+		return -1;
+	}
+
+	if (!plcm->drv->set_hbm_cmdq) {
+		DISPERR("FATAL ERROR, lcm_drv->set_mask_cmdq is null\n");
+		return -1;
+	}
+
+	plcm->drv->set_hbm_cmdq(en, qhandle);
+
+	return 0;
+}
+
+
+int disp_lcm_get_hbm_state(struct disp_lcm_handle *plcm)
+{
+	if (!_is_lcm_inited(plcm)) {
+		DISPERR("lcm_drv is null\n");
+		return -1;
+	}
+
+	if (!plcm->drv->get_hbm_state) {
+		DISPERR("FATAL ERROR, lcm_drv->get_mask_state is null\n");
+		return -1;
+	}
+
+	return plcm->drv->get_hbm_state();
+}
+
+unsigned int disp_lcm_get_hbm_wait_frame(bool en, struct disp_lcm_handle *plcm)
+{
+	unsigned int time = 0;
+
+	if (!_is_lcm_inited(plcm)) {
+		DISPERR("lcm_drv is null\n");
+		return -1;
+	}
+
+	if (en)
+		time = plcm->params->hbm_enable_wait_frame;
+	else
+		time = plcm->params->hbm_disable_wait_frame;
+
+	return time;
+}
+
+int disp_lcm_framedone_notify(struct disp_lcm_handle *plcm)
+{
+	if (!_is_lcm_inited(plcm)) {
+		DISPERR("lcm_drv is null\n");
+		return -1;
+	}
+
+	plcm->drv->framedone_notify();
+
+	return 0;
+}
+
+int disp_lcm_path_lock(bool lock, struct disp_lcm_handle *plcm)
+{
+	if (!_is_lcm_inited(plcm)) {
+		DISPERR("lcm_drv is null\n");
+		return -1;
+	}
+
+	plcm->drv->lcm_path_lock(lock);
+
+	return 0;
+}
+
+int disp_dsi_set_withcmdq(struct disp_lcm_handle *plcm, void *cmdq,
+	unsigned int cmd, unsigned char count, unsigned char *para_list,
+	unsigned char force_update)
+{
+	struct LCM_DRIVER *lcm_drv = NULL;
+
+	DISPFUNC();
+	DISPMSG("===%s===\n", __func__);
+	if (_is_lcm_inited(plcm)) {
+		lcm_drv = plcm->drv;
+		if (lcm_drv->dsi_set_withcmdq) {
+			DISPMSG("dsi_set_withcmdq cmd %x count %x force %x\n",
+				cmd, count, force_update);
+			lcm_drv->dsi_set_withcmdq(cmdq, cmd, count,
+				para_list, force_update);
+			DISPMSG("dsi_set_withcmdq\n");
+		} else {
+			DISPERR("FATAL, lcm_drv->set_backlight is null\n");
+			return -1;
+		}
+	} else {
+		DISPERR("lcm_drv is null\n");
+		return -1;
+	}
+
+	return 0;
+}
+
+int disp_dsi_set_withrawcmdq(struct disp_lcm_handle *plcm, void *cmdq,
+	unsigned int *pdata, unsigned int queue_size,
+	unsigned char force_update)
+{
+	struct LCM_DRIVER *lcm_drv = NULL;
+
+	DISPFUNC();
+	DISPMSG("===%s===\n", __func__);
+	if (_is_lcm_inited(plcm)) {
+		lcm_drv = plcm->drv;
+		if (lcm_drv->dsi_set_withrawcmdq) {
+			lcm_drv->dsi_set_withrawcmdq(cmdq, pdata,
+				queue_size, force_update);
+		} else {
+			DISPERR("ERROR, dsi_set_withrawcmdq is null\n");
+			return -1;
+		}
+	} else {
+		DISPERR("lcm_drv is null\n");
 		return -1;
 	}
 
@@ -1684,3 +1879,75 @@ int disp_lcm_validate_roi(struct disp_lcm_handle *plcm,
 	DISPERR("validate roi lcm_drv is null\n");
 	return -1;
 }
+
+int disp_lcm_util_set_read_cmdq_cmd_v2(struct disp_lcm_handle *plcm,
+	void *handle, unsigned int data_id, unsigned int offset,
+	unsigned int cmd, unsigned char *buffer, unsigned char size)
+{
+	struct LCM_DRIVER *lcm_drv = NULL;
+	int ret = 0;
+
+	DISPFUNC();
+
+	/* check parameter is valid */
+	if (_is_lcm_inited(plcm)) {
+		lcm_drv = plcm->drv;
+		if (lcm_drv->read_by_cmdq) {
+			ret = lcm_drv->read_by_cmdq(handle, data_id, offset,
+				cmd, buffer, size);
+		} else {
+			DISPERR("Fail lcm_drv->read_by_cmdq is NULL\n");
+			return -1;
+		}
+	} else {
+		DISPERR("lcm_drv is NULL\n");
+		return -1;
+	}
+
+	return ret;
+}
+
+#if defined(CONFIG_SMCDSD_PANEL)
+int disp_lcm_cmd_q(struct disp_lcm_handle *plcm, unsigned int enable)
+{
+	struct LCM_DRIVER *lcm_drv = NULL;
+
+	DISPMSG("%s, enable:%d\n", __func__, enable);
+	if (_is_lcm_inited(plcm)) {
+		lcm_drv = plcm->drv;
+		if (lcm_drv->cmd_q) {
+			lcm_drv->cmd_q(enable);
+		} else {
+			return -1;
+		}
+		return 0;
+	}
+
+	DISPERR("lcm_drv is null\n");
+	return -1;
+}
+#endif
+
+/* set display on */
+int disp_lcm_set_display_on(struct disp_lcm_handle *plcm)
+{
+	struct LCM_DRIVER *lcm_drv = NULL;
+
+	DISPFUNC();
+
+	/* check parameter is valid */
+	if (_is_lcm_inited(plcm)) {
+		lcm_drv = plcm->drv;
+		if (lcm_drv->set_display_on) {
+			lcm_drv->set_display_on();
+		} else {
+			DISPERR("Fail lcm_drv->set_display_on is NULL\n");
+			return -1;
+		}
+	} else {
+		DISPERR("lcm_drv is NULL\n");
+		return -1;
+	}
+	return 1;
+}
+

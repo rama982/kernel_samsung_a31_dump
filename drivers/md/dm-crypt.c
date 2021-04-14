@@ -1634,7 +1634,8 @@ static int crypt_dev_id(const char *path)
 		/* example: /dev/block/platform/bootdevice/by-name/userdata */
 		type = 0;
 
-	} else if (strstr(path, "externdevice") || strstr(path, "vold")) {
+	} else if (strstr(path, "externdevice") ||
+		strstr(path, "vold") || strstr(path, "loop")) {
 
 		/* example: /dev/block/vold/private:179,2 */
 		type = 1;

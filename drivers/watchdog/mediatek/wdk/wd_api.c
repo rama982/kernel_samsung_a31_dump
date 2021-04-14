@@ -41,7 +41,7 @@ static int disable_local(void);
 static int wd_sw_reset(int type);
 static int wd_restart(enum wd_restart_type type);
 static int set_mode(enum ext_wdt_mode mode);
-static int wd_dram_reserved_mode(bool enabled);
+int wd_dram_reserved_mode(bool enabled);
 static int wd_mcu_cache_preserve(bool enabled);
 static int thermal_direct_mode_config(enum wk_req_en en,
 	enum wk_req_mode mode);
@@ -298,7 +298,7 @@ static int thermal_direct_mode_config(enum wk_req_en en, enum wk_req_mode mode)
 }
 
 
-static int wd_dram_reserved_mode(bool enabled)
+int wd_dram_reserved_mode(bool enabled)
 {
 	int ret = 0;
 

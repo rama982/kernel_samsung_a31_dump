@@ -44,7 +44,7 @@ static unsigned long long idle_ratio_profile_duration;
 
 /* idle block information */
 static unsigned long long idle_cnt_dump_prev_time;
-static unsigned int idle_cnt_dump_criteria = 5000;          /* 5 sec */
+static unsigned int idle_cnt_dump_criteria = 60000;          /* 60 sec */
 
 /*External weak functions: implemented in mtk_cpufreq_api.c*/
 unsigned int __attribute__((weak))

@@ -108,7 +108,11 @@ static int mt6768_sgen_set(struct snd_kcontrol *kcontrol,
 		regmap_update_bits(afe->regmap, AFE_SINEGEN_CON2,
 				   INNER_LOOP_BACK_MODE_MASK_SFT,
 				   mode_idx << INNER_LOOP_BACK_MODE_SFT);
-		regmap_write(afe->regmap, AFE_SINEGEN_CON0, 0x04ac2ac1);
+		regmap_update_bits(afe->regmap, AFE_SINEGEN_CON0,
+						   DAC_EN_MASK_SFT,
+						   0x1 << DAC_EN_SFT);
+
+		/*regmap_write(afe->regmap, AFE_SINEGEN_CON0, 0x04ac2ac1);*/
 	} else {
 		/* disable sgen */
 		regmap_update_bits(afe->regmap, AFE_SINEGEN_CON0,
@@ -1102,6 +1106,8 @@ static void *get_sph_property_by_name(struct mt6768_afe_private *afe_priv,
 		return &(afe_priv->speech_shm_usip);
 	else if (strcmp(name, "Speech_SHM_Widx") == 0)
 		return &(afe_priv->speech_shm_widx);
+	else if (strcmp(name, "Speech_Cust_Param_Init") == 0)
+		return &(afe_priv->speech_cust_param_init);
 	else
 		return NULL;
 }
@@ -1227,6 +1233,9 @@ static const struct snd_kcontrol_new mt6768_afe_speech_controls[] = {
 		       speech_property_get, speech_property_set),
 	SOC_SINGLE_EXT("Speech_SHM_Widx",
 		       SND_SOC_NOPM, 0, 0xFFFFFFFF, 0,
+		       speech_property_get, speech_property_set),
+	SOC_SINGLE_EXT("Speech_Cust_Param_Init",
+		       SND_SOC_NOPM, 0, 0x1, 0,
 		       speech_property_get, speech_property_set),
 };
 

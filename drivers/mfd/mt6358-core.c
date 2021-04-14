@@ -31,6 +31,9 @@
 #include <linux/mfd/mt6359p/registers.h>
 #endif
 #include <linux/mfd/mt6358/core.h>
+#ifdef CONFIG_SEC_PM
+#include <linux/wakeup_reason.h>
+#endif
 
 #define MT6357_CID_CODE		0x5700
 #define MT6358_CID_CODE		0x5800
@@ -165,6 +168,10 @@ static void mt6358_irq_sp_handler(struct mt6358_chip *chip,
 				sta_reg, sp_int_status,
 				pmic_irqs[hwirq].name, hwirq,
 				irq_get_trigger_type(virq));
+#ifdef CONFIG_SEC_PM
+			if(chip->suspended)
+				log_wakeup_reason(virq);
+#endif
 			if (virq)
 				handle_nested_irq(virq);
 		}
@@ -358,6 +365,26 @@ static int mt6358_irq_init(struct mt6358_chip *chip)
 	return ret;
 }
 
+#ifdef CONFIG_SEC_PM
+static int mt6358_suspend(struct platform_device *pdev, pm_message_t state)
+{
+	struct mt6358_chip *chip = platform_get_drvdata(pdev);
+
+	chip->suspended = true;
+
+	return 0;
+}
+
+static int mt6358_resume(struct platform_device *pdev)
+{
+	struct mt6358_chip *chip = platform_get_drvdata(pdev);
+
+	chip->suspended = false;
+
+	return 0;
+}
+#endif
+
 static struct mt6358_chip *mt6358_pm_off;
 static void mt6358_power_off(void)
 {
@@ -399,6 +426,10 @@ static int mt6358_probe(struct platform_device *pdev)
 	}
 	dev_info(chip->dev, "PMIC irq=%d, PMIC HWCID=0x%x, ret=%d\n",
 		 chip->irq, id, ret);
+
+#ifdef CONFIG_SEC_PM
+	chip->suspended = false;
+#endif
 
 	mt6358_pm_off = chip;
 	pm_power_off = mt6358_power_off;
@@ -465,6 +496,10 @@ static struct platform_driver mt6358_driver = {
 		.name = "mt6358-pmic",
 		.of_match_table = of_match_ptr(mt6358_of_match),
 	},
+#ifdef CONFIG_SEC_PM
+	.suspend = mt6358_suspend,
+	.resume = mt6358_resume,
+#endif
 };
 
 static int __init mt6358_init(void)

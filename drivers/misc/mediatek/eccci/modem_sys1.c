@@ -178,6 +178,8 @@ static void md_cd_exception(struct ccci_modem *md, enum HIF_EX_STAGE stage)
 
 	CCCI_ERROR_LOG(md->index, TAG, "MD exception HIF %d\n", stage);
 	ccci_event_log("md%d:MD exception HIF %d\n", md->index, stage);
+
+	__pm_wakeup_event(&md->trm_wake_lock, jiffies_to_msecs(50 * HZ));
 	/* in exception mode, MD won't sleep, so we do not
 	 * need to request MD resource first
 	 */
@@ -241,6 +243,8 @@ static void polling_ready(struct ccci_modem *md, int step)
 		if (md_info->channel_id & (1 << step)) {
 			CCCI_DEBUG_LOG(md->index, TAG,
 				"poll RCHNUM %d\n", md_info->channel_id);
+			ccif_write32(md_info->ap_ccif_base,
+				APCCIF_ACK, (1 << step));
 			return;
 		}
 		msleep(time_once);
@@ -256,13 +260,15 @@ static int md_cd_ee_handshake(struct ccci_modem *md, int timeout)
 	 * D2H_EXCEPTION_CLEARQ_DONE together
 	 */
 	/*polling_ready(md_ctrl, D2H_EXCEPTION_INIT);*/
+	__pm_wakeup_event(&md->trm_wake_lock, jiffies_to_msecs(20 * HZ));
 	md_cd_exception(md, HIF_EX_INIT);
+	__pm_wakeup_event(&md->trm_wake_lock, jiffies_to_msecs(20 * HZ));
 	polling_ready(md, D2H_EXCEPTION_INIT_DONE);
 	md_cd_exception(md, HIF_EX_INIT_DONE);
-
+	__pm_wakeup_event(&md->trm_wake_lock, jiffies_to_msecs(20 * HZ));
 	polling_ready(md, D2H_EXCEPTION_CLEARQ_DONE);
 	md_cd_exception(md, HIF_EX_CLEARQ_DONE);
-
+	__pm_wakeup_event(&md->trm_wake_lock, jiffies_to_msecs(20 * HZ));
 	polling_ready(md, D2H_EXCEPTION_ALLQ_RESET);
 	md_cd_exception(md, HIF_EX_ALLQ_RESET);
 
@@ -629,6 +635,8 @@ static int md_cd_stop(struct ccci_modem *md, unsigned int stop_type)
 {
 	int ret = 0;
 	struct md_sys1_info *md_info = (struct md_sys1_info *)md->private_data;
+	int i;
+	unsigned int rx_ch_bitmap;
 
 	CCCI_NORMAL_LOG(md->index, TAG,
 		"modem is power off, stop_type=%d\n", stop_type);
@@ -649,6 +657,23 @@ static int md_cd_stop(struct ccci_modem *md, unsigned int stop_type)
 	 */
 	ccci_reset_ccif_hw(md->index, AP_MD1_CCIF,
 		md_info->ap_ccif_base, md_info->md_ccif_base);
+
+	rx_ch_bitmap = ccif_read32(md_info->md_ccif_base, APCCIF_RCHNUM);
+	if (rx_ch_bitmap) {
+		CCCI_NORMAL_LOG(md->index, TAG,
+			"CCIF rx bitmap: 0x%x\n", rx_ch_bitmap);
+		for (i = 0; i < CCIF_CH_NUM; i++) {
+			/* Ack one by one */
+			if (rx_ch_bitmap & (1 << i))
+				ccif_write32(md_info->md_ccif_base,
+					APCCIF_ACK, (1 << i));
+		}
+		rx_ch_bitmap =
+			ccif_read32(md_info->md_ccif_base, APCCIF_RCHNUM);
+		CCCI_NORMAL_LOG(md->index, TAG,
+			"CCIF rx bitmap: 0x%x(after ack)\n", rx_ch_bitmap);
+	}
+
 	md_cd_check_emi_state(md, 0);	/* Check EMI after */
 
 	/*disable cldma & ccif clk*/

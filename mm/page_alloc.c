@@ -214,6 +214,32 @@ bool pm_suspended_storage(void)
 }
 #endif /* CONFIG_PM_SLEEP */
 
+
+static gfp_t tee_cma_saved_gfp_mask;
+
+void tee_cma_restore_gfp_mask(void)
+{
+#ifdef CONFIG_PM_SLEEP
+	WARN_ON(!mutex_is_locked(&pm_mutex));
+#endif
+	if (tee_cma_saved_gfp_mask)  {
+		gfp_allowed_mask = tee_cma_saved_gfp_mask;
+		tee_cma_saved_gfp_mask =0;
+	}
+}
+
+void tee_cma_restrict_gfp_mask(void)
+{
+#ifdef CONFIG_PM_SLEEP
+	WARN_ON(!mutex_is_locked(&pm_mutex));
+#endif
+	WARN_ON(tee_cma_saved_gfp_mask);
+	tee_cma_saved_gfp_mask = gfp_allowed_mask;
+	gfp_allowed_mask &= ~__GFP_CMA;
+}
+
+
+
 #ifdef CONFIG_HUGETLB_PAGE_SIZE_VARIABLE
 unsigned int pageblock_order __read_mostly;
 #endif
@@ -4646,7 +4672,9 @@ long si_mem_available(void)
 	 */
 	available += global_node_page_state(NR_INDIRECTLY_RECLAIMABLE_BYTES) >>
 		PAGE_SHIFT;
-
+#ifdef CONFIG_ION_RBIN_HEAP
+	available += atomic_read(&rbin_cached_pages);
+#endif
 	if (available < 0)
 		available = 0;
 	return available;
@@ -4656,6 +4684,9 @@ EXPORT_SYMBOL_GPL(si_mem_available);
 void si_meminfo(struct sysinfo *val)
 {
 	val->totalram = totalram_pages;
+#ifdef CONFIG_ION_RBIN_HEAP
+	val->totalram += totalrbin_pages;
+#endif
 	val->sharedram = global_node_page_state(NR_SHMEM);
 	val->freeram = global_zone_page_state(NR_FREE_PAGES);
 	val->bufferram = nr_blockdev_pages();
@@ -6772,6 +6803,7 @@ unsigned long free_reserved_area(void *start, void *end, int poison, char *s)
 	void *pos;
 	unsigned long pages = 0;
 
+	free_memsize_reserved(__pa(start), end - start);
 	start = (void *)PAGE_ALIGN((unsigned long)start);
 	end = (void *)((unsigned long)end & PAGE_MASK);
 	for (pos = start; pos < end; pos += PAGE_SIZE, pages++) {
@@ -7905,6 +7937,7 @@ int free_reserved_memory(phys_addr_t start_phys,
 	}
 
 	memblock_free(start_phys, (end_phys - start_phys));
+	free_memsize_reserved(start_phys, (end_phys - start_phys));
 
 	for (pos = start_phys; pos < end_phys; pos += PAGE_SIZE, pages++)
 		free_reserved_page(phys_to_page(pos));

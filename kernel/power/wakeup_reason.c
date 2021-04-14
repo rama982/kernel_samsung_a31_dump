@@ -27,6 +27,12 @@
 #include <linux/notifier.h>
 #include <linux/suspend.h>
 
+#ifdef CONFIG_SEC_PM
+#include <mtk_spm_internal.h>
+#define SPM_LOG_BUF_SIZE 64
+static int spm_irq;
+static char spm_reason[SPM_LOG_BUF_SIZE];
+#endif
 
 #define MAX_WAKEUP_REASON_IRQS 32
 static int irq_list[MAX_WAKEUP_REASON_IRQS];
@@ -51,6 +57,13 @@ static ssize_t last_resume_reason_show(struct kobject *kobj, struct kobj_attribu
 		buf_offset = sprintf(buf, "Abort: %s", abort_reason);
 	} else {
 		for (irq_no = 0; irq_no < irqcount; irq_no++) {
+#ifdef CONFIG_SEC_PM
+			if(spm_irq == irq_list[irq_no]) {
+				buf_offset += sprintf(buf + buf_offset, "%d SPM%s\n",
+						irq_list[irq_no], spm_reason);
+				continue ;
+			}
+#endif
 			desc = irq_to_desc(irq_list[irq_no]);
 			if (desc && desc->action && desc->action->name)
 				buf_offset += sprintf(buf + buf_offset, "%d %s\n",
@@ -104,7 +117,44 @@ static struct attribute_group attr_group = {
 	.attrs = attrs,
 };
 
-/*
+#ifdef CONFIG_SEC_PM
+void log_wakeup_reason_spm(int irq, unsigned int wakesta_r12,
+			unsigned int assert_pc)
+{
+	int i;
+	char *local_ptr;
+
+	spin_lock(&resume_reason_lock);
+	spm_irq = irq;
+	if(assert_pc != 0) {
+		local_ptr = " PCM ASSERT";
+		if ((strlen(spm_reason) + strlen(local_ptr)) < SPM_LOG_BUF_SIZE)
+			strncat(spm_reason, local_ptr, strlen(local_ptr));
+	} else {
+		for (i = 0; i < 32; i++) {
+			if (wakesta_r12 & (1U << i)) {
+				if ((strlen(spm_reason) + strlen(wakesrc_str[i])) <
+					SPM_LOG_BUF_SIZE)
+					strncat(spm_reason, wakesrc_str[i],
+						strlen(wakesrc_str[i]));
+			}
+		}
+	}
+	printk(KERN_INFO "Resume caused by IRQ %d, SPM%s", irq, spm_reason);
+
+	if (irqcount == MAX_WAKEUP_REASON_IRQS) {
+		spin_unlock(&resume_reason_lock);
+		printk(KERN_WARNING "Resume caused by more than %d IRQs\n",
+				MAX_WAKEUP_REASON_IRQS);
+		return;
+	}
+
+	irq_list[irqcount++] = irq;
+	spin_unlock(&resume_reason_lock);
+}
+#endif
+
+/*c
  * logs all the wake up reasons to the kernel
  * stores the irqs to expose them to the userspace via sysfs
  */
@@ -173,6 +223,9 @@ static int wakeup_reason_pm_event(struct notifier_block *notifier,
 		spin_lock(&resume_reason_lock);
 		irqcount = 0;
 		suspend_abort = false;
+#ifdef CONFIG_SEC_PM
+		spm_reason[0] = '\0';
+#endif
 		spin_unlock(&resume_reason_lock);
 		/* monotonic time since boot */
 		last_monotime = ktime_get();

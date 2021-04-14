@@ -27,7 +27,7 @@
 static bool idle_syspll_feature_enable = MTK_IDLE_FEATURE_ENABLE_IDLESYSPLL;
 static bool idle_syspll_bypass_idle_cond;
 
-static unsigned int idle_syspll_flag = MTK_IDLE_LOG_REDUCE;
+static unsigned int idle_syspll_flag = MTK_IDLE_LOG_DISABLE;
 
 /* Syspll mode in spm won't turn 26m off
  * So we won't block 26m event in spm

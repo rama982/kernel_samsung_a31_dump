@@ -30,10 +30,8 @@
 
 #include <linux/string.h>
 
-#if 0
 #ifdef CONFIG_MTK_RAM_CONSOLE
 #include "trusty-ramconsole.h"
-#endif
 #endif
 
 /* #define TRUSTY_SMC_DEBUG */
@@ -380,30 +378,23 @@ static ssize_t trusty_version_store(struct device *dev,
 
 DEVICE_ATTR_RW(trusty_version);
 
-#if 0
 #ifdef CONFIG_MTK_RAM_CONSOLE
 static void init_gz_ramconsole(struct device *dev)
 {
 	u32 low, high;
-#ifdef SRAM_TEST
-
-	low = 0x0011E000;
-	high = 0x00000000;
-#else
 	unsigned long *gz_irq_pa;
 
 	gz_irq_pa = aee_rr_rec_gz_irq_pa();
-	trusty_info(dev, "ram console: get PA %p\n", gz_irq_pa);
+	trusty_info(dev, "ram console get PA 0x%llx\n",
+		    (unsigned long)gz_irq_pa);
 
 	low = (u32) (((u64) gz_irq_pa << 32) >> 32);
 	high = (u32) ((u64) gz_irq_pa >> 32);
-#endif
 
-	trusty_info(dev,
-		"ram console: send ram console PA from kernel to GZ\n");
-	trusty_std_call32(dev, MT_SMC_SC_SET_RAMCONSOLE, low, high, 0);
+	trusty_info(dev, "send ram console PA from kernel to GZ\n");
+	trusty_std_call32(dev, MTEE_SMCNR(MT_SMCF_SC_SET_RAMCONSOLE, dev),
+			  low, high, 0);
 }
-#endif
 #endif
 
 const char *trusty_version_str_get(struct device *dev)
@@ -727,10 +718,9 @@ static int trusty_probe(struct platform_device *pdev)
 	trusty_info(&pdev->dev, "%s, Not MT_GZ_TRUSTY_DEBUGFS\n", __func__);
 #endif
 
-#if 0
 #ifdef CONFIG_MTK_RAM_CONSOLE
-	init_gz_ramconsole(&pdev->dev);
-#endif
+	if (s->tee_id == TEE_ID_TRUSTY)
+		init_gz_ramconsole(&pdev->dev);
 #endif
 	return 0;
 

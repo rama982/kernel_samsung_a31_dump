@@ -1,7 +1,7 @@
 CONFIG,TYPE,OWNER,NOTE,6763_64,6739,6739_64,6771,6771_64,6768,6768_64,6785,6785_64,6885,6885_64,6886,6886_64
-CONFIG_ACCDET_EINT,PLATFORM,darren.liao,,X,X,X,X,X,X,X,X,X,X,X,X,X
-CONFIG_ACCDET_EINT_IRQ,PLATFORM,argus.lin,,y,y,y,y,y,y,y,y,y,y,y,y,y
-CONFIG_ACCDET_SUPPORT_EINT0,PLATFORM,argus.lin,,X,y,y,y,y,y,y,y,y,y,y,y,y
+CONFIG_ACCDET_EINT,PLATFORM,darren.liao,,X,X,X,X,X,y,y,X,X,X,X,X,X
+CONFIG_ACCDET_EINT_IRQ,PLATFORM,argus.lin,,y,y,y,y,y,N,N,y,y,y,y,y,y
+CONFIG_ACCDET_SUPPORT_EINT0,PLATFORM,argus.lin,,X,y,y,y,y,N,N,y,y,y,y,y,y
 CONFIG_ACCDET_SUPPORT_EINT1,PLATFORM,xuexi.bai,,y,X,X,X,X,X,X,X,X,X,X,X,X
 CONFIG_AEABI,PLATFORM,,,X,y,X,y,X,y,X,y,X,y,X,y,X
 CONFIG_ANDROID_DEFAULT_SETTING,COMMON,,,y,y,y,y,y,y,y,y,y,y,y,y,y
@@ -33,6 +33,10 @@ CONFIG_BLK_DEV_DM,COMMON,,,y,y,y,y,y,y,y,y,y,y,y,y,y
 CONFIG_BLK_DEV_LOOP,COMMON,,,y,y,y,y,y,y,y,y,y,y,y,y,y
 CONFIG_BLK_DEV_LOOP_MIN_COUNT,COMMON,,,16,16,16,16,16,16,16,16,16,16,16,16,16
 CONFIG_BLK_DEV_MD,PROJECT,pangyen.chen,,,,,,,,,,,,,,
+CONFIG_MTK_TC10_FEATURE,PROJECT,leon.chen,,,,,,,,,,,,,,
+CONFIG_MTK_TC10_IN_HOUSE,PROJECT,leon.chen,,,,,,,,,,,,,,
+CONFIG_GPIO_PCAL6416A,PROJECT,leon.chen,,,,,,,,,,,,,,
+CONFIG_TOUCHSCREEN_MELFAS_MSS100_A,PROJECT,leon.chen,,,,,,,,,,,,,,
 CONFIG_BLK_DEV_SD,COMMON,,,y,y,y,y,y,y,y,y,y,y,y,y,y
 CONFIG_BOUNCE,PLATFORM,miles.chen,,N,X,N,X,N,X,N,X,N,X,N,X,N
 CONFIG_BRIDGE,COMMON,,,y,y,y,y,y,y,y,y,y,y,y,y,y
@@ -116,7 +120,7 @@ CONFIG_CUSTOM_KERNEL_GRAVITY_SENSOR,PROJECT,hongxu.zhao,new config in this commi
 CONFIG_CUSTOM_KERNEL_GRV_SENSOR,PROJECT,hongxu.zhao,new config in this commit efa7fd3bb4ce6ae352425c40321c8d5c7c1c6c14,,,,,,,,,,,,,
 CONFIG_CUSTOM_KERNEL_GYROSCOPE,PROJECT,Lomen.Wu,,,,,,,,,,,,,,
 CONFIG_CUSTOM_KERNEL_GYROSCOPE_MODULE,PROJECT,Yue Wu,new config in this commit I7597083eee235dfc7189c82e62d210be5534b595,,,,,,,,,,,,,
-CONFIG_CUSTOM_KERNEL_HDMI,PLATFORM,we.li,new config in this commit b6da34f942623cbaac8ae70f4b2405d4a81961f8,ITE66121,ITE66121,ITE66121,ITE66121,ITE66121,ITE66121,ITE66121,ITE66121,ITE66121,ITE66121,ITE66121,ITE66121
+CONFIG_CUSTOM_KERNEL_HDMI,PLATFORM,we.li,new config in this commit b6da34f942623cbaac8ae70f4b2405d4a81961f8,ITE66121,ITE66121,ITE66121,ITE66121,ITE66121,ITE66121,ITE66121,ITE66121,ITE66121,ITE66121,ITE66121,ITE66121,
 CONFIG_CUSTOM_KERNEL_HUMIDITY,PLATFORM,hongxu.zhao,new config in this commit 063ebd2dfda85d1c6ea1c0120c87fa93fc2570e8,X,X,X,X,X,X,X,X,X,X,X,X,X
 CONFIG_CUSTOM_KERNEL_IMGSENSOR,PROJECT,jenlung.tsai,,O,O,O,O,O,O,O,O,O,O,O,O,O
 CONFIG_CUSTOM_KERNEL_IN_POCKET_SENSOR,PROJECT,yucong.xiong,new config in this commit a1a78f1763fbee529159f277816c062515ac238e,,,,,,,,,,,,,
@@ -269,6 +273,7 @@ CONFIG_HWZRAM_IMPL,PROJECT,Chinwen.Chang,,,,,,,,,,,,,,
 CONFIG_HZ_300,PROJECT,,,O,,O,,O,,O,,O,,O,,O
 CONFIG_I2C,COMMON,,,X,X,X,X,X,X,X,X,X,X,X,X,X
 CONFIG_I2C_MTK,COMMON,camo.xiao,,y,y,y,y,y,y,y,y,y,y,y,y,y
+CONFIG_I2C_GPIO,PROJECT,bobule.chang,,,,,,,,,,,,,,
 CONFIG_IFB,COMMON,,,y,y,y,y,y,y,y,y,y,y,y,y,y
 CONFIG_IIO,PROJECT,gaia.chang,,,,,,,,,,,,,,
 CONFIG_IMGSENSOR_MAIN,PROJECT,josepchi.tsai,,X,X,O,O,O,O,O,O,O,O,O,O,O
@@ -384,7 +389,7 @@ CONFIG_MTK_ACAO_SUPPORT,PROJECT,aaron.tian,,y,y,y,y,y,y,y,y,y,y,y,y,y
 CONFIG_MTK_ACCDET,COMMON,darren.liao,,y,y,y,y,y,y,y,y,y,y,y,y,y
 CONFIG_MTK_ACCELHUB,PROJECT,weiqi.fu,new config in this commit ddc5d59450d236e7d3732ebd43a19c5056787cc0,,,,,,,,,,,,,
 CONFIG_MTK_ACTIVITYHUB,PROJECT,hongxu.zhao,new config in this commit c432a63a513fc50d10e28c1c65b6bba2903ac29c,,,,,,,,,,,,,
-CONFIG_MTK_ADDITIONAL_BATTERY_TABLE,PLATFORM,wy.chuang,battery,X,X,X,X,X,X,X,X,X,X,X,X,X
+CONFIG_MTK_ADDITIONAL_BATTERY_TABLE,PROJECT,wy.chuang,battery,X,X,X,X,X,X,X,X,X,X,X,X,X
 CONFIG_MTK_AEE_FEATURE,COMMON,,,y,y,y,y,y,y,y,y,y,y,y,y,y
 CONFIG_MTK_AEE_MRDUMP,COMMON,my.chunag,,y,y,y,y,y,y,y,y,y,y,y,y,y
 CONFIG_MTK_AKM09911,PROJECT,jy.lan,,,,,,,,,,,,,,
@@ -434,7 +439,7 @@ CONFIG_MTK_CAMERA_ISP_TSF_SUPPORT,PLATFORM,Hung-Wen.Hsieh,,y,X,y,y,y,y,y,y,y,y,y
 CONFIG_MTK_CAMERA_ISP_WPE_SUPPORT,PLATFORM,MH.hsiao,,X,X,y,y,y,y,y,y,y,y,y,y,y
 CONFIG_MTK_CCCI_DEVICES,COMMON,yanbin.ren,new config in this commit 9715b038cd89c33b3acb9a75a29652347cccc65c,X,X,X,X,X,X,X,X,X,X,X,X,X
 CONFIG_MTK_CCU,PROJECT,kuanfu.yeh,,O,N,y,y,y,y,y,y,y,y,y,y,y
-CONFIG_MTK_CHARGER,COMMON,ivan-yh.chen,,y,y,y,y,y,y,y,y,y,y,y,y,y
+CONFIG_MTK_CHARGER,PROJECT,ivan-yh.chen,,y,y,y,y,y,y,y,y,y,y,y,y,y
 CONFIG_MTK_CHARGER_UNLIMITED,PROJECT,ivan-yh.chen,,,,,,,,,,,,,,
 CONFIG_MTK_CHIP,COMMON,Nora.Chang,,y,y,y,y,y,y,y,y,y,y,y,y,y
 CONFIG_MTK_CLKMGR,PLATFORM,,,X,X,X,X,X,X,X,X,X,X,X,X,X
@@ -446,7 +451,7 @@ CONFIG_MTK_CMDQ,COMMON,dennis-yc.hsieh,,y,y,y,y,y,y,y,y,y,y,y,y,y
 CONFIG_MTK_CMDQ_MBOX,COMMON,dennis-yc.hsieh,,y,y,y,y,y,y,y,y,y,y,y,y,y
 CONFIG_MTK_COMBO,COMMON,,,y,y,y,y,y,y,y,y,y,y,y,y,y
 CONFIG_MTK_COMBO_ANT,PROJECT,zhiguo.niu,new config in this commit 3413d51500ed33e5696cbfe6286d5b8617867b35,,,,,,,,,,,,,
-CONFIG_MTK_COMBO_BT,PLATFORM,yu-min.lin,going to phase out,y,y,X,y,y,X,X,X,X,X,X,X,X
+CONFIG_MTK_COMBO_BT,PLATFORM,yu-min.lin,going to phase out,y,y,X,y,y,y,y,X,X,X,X,X,X
 CONFIG_MTK_COMBO_CHIP_CONSYS_6739,PLATFORM,robbin.chiu,,X,y,y,X,X,X,X,X,X,X,X,X,X
 CONFIG_MTK_COMBO_CHIP_CONSYS_6763,PLATFORM,robbin.chiu,,y,X,X,X,X,X,X,X,X,X,X,X,X
 CONFIG_MTK_COMBO_CHIP_CONSYS_6768,PLATFORM,tim.chang,,X,X,X,X,X,y,y,X,X,X,X,X,X
@@ -487,7 +492,7 @@ CONFIG_MTK_DRS,PROJECT,Miles.Chen,,y,,y,,y,,y,,y,,y,,y
 CONFIG_MTK_DTBO_FEATURE,PROJECT,chia-hao.hsu,,X,,X,,X,,X,,X,,X,,X
 CONFIG_MTK_DUAL_CHARGER_SUPPORT,PROJECT,elvin.lin,,,,,,,,,,,,,,
 CONFIG_MTK_DUM_CHAR,PROJECT,chienwei.chang,,,,,,,,,,,,,,
-CONFIG_MTK_DYNAMIC_FPS_FRAMEWORK_SUPPORT,PLATFORM,jih-cheng.chiu,,N,N,N,N,N,N,N,N,N,N,N,N,N
+CONFIG_MTK_DYNAMIC_FPS_FRAMEWORK_SUPPORT,PLATFORM,jih-cheng.chiu,,y,y,y,y,y,y,y,y,y,y,y,y,y
 CONFIG_MTK_DYNAMIC_FPS_SUPPORT,PROJECT,jih-cheng.chiu,,,,,,,,,,,,,,
 CONFIG_MTK_EARA_THERMAL,PROJECT,chiayu.ku,,,,,,,,,,,,,,
 CONFIG_MTK_ECCCI_C2K,PROJECT,wenbo.ning,new config in this commit 53dd74ddebad6dd1d6c646f4f907945bfeb86f73,,,,,,,,,,,,,
@@ -558,10 +563,9 @@ CONFIG_MTK_GRAVITYHUB,PROJECT,weiqi.fu,new config in this commit 6cf72299191fe83
 CONFIG_MTK_GYROHUB,PROJECT,weiqi.fu,new config in this commit ddc5d59450d236e7d3732ebd43a19c5056787cc0,,,,,,,,,,,,,
 CONFIG_MTK_GZ_KREE,PROJECT,chsuan.lin,,O,,O,,O,,O,,O,,O,,O
 CONFIG_MTK_GZ_KREE,PROJECT,chsuan.lin,,O,O,O,O,O,O,O,O,O,O,O,O,O
-CONFIG_MTK_GZ_SUPPORT_SDSP,PROJECT,sean-sy.su,,,,,,,,,,
+CONFIG_MTK_GZ_SUPPORT_SDSP,PROJECT,sean-sy.su,,,,,,,,,,,,,,
 CONFIG_MTK_HDMI_SUPPORT,PROJECT,junzhi.zhao,new config in this commit 8981f73cf7bc71472ded61c12aa2a21239e1f68b,,,,,,,,,,,,,
 CONFIG_MTK_HDMI_TDM,PLATFORM,Michael.Hsiao,new config in this commit 3db7e757ff4b38b71bf2d09fc921a7d277d11b75,X,,X,,X,,X,,X,,X,,X
-CONFIG_MTK_HIGH_FRAME_RATE,PROJECT,Huadian.liu,,,,,,,,,,,,,,
 CONFIG_MTK_HMDYHUB,PROJECT,weiqi.fu,new config in this commit ddc5d59450d236e7d3732ebd43a19c5056787cc0,,,,,,,,,,,,,
 CONFIG_MTK_HP_ANASWITCH,PROJECT,georgecy.lin,new config in this commit 378eb5b131260db917d022555fa920fa118ab3a1,,,,,,,,,,,,,
 CONFIG_MTK_HTS221,PROJECT,hongxu.zhao,new config in this commit 063ebd2dfda85d1c6ea1c0120c87fa93fc2570e8,,,,,,,,,,,,,
@@ -882,6 +886,40 @@ CONFIG_RT7207_ADAPTER,PROJECT,vend_jeff_chang001,new config at this commit ebc85
 CONFIG_RT9465_PWR_EN_TO_MT6336,PROJECT,,,O,,O,,O,,O,,O,,O,,O
 CONFIG_RTC_DRV_MT6358,PLATFORM,wilma.wu,,X,X,X,X,X,y,y,y,y,y,y,y,y
 CONFIG_RTC_SYSTOHC,COMMON,,,N,N,N,N,N,N,N,N,N,N,N,N,N
+CONFIG_REGULATOR_S2MPB03,PROJECT,joan.cho,,,,,,,,,,,,,,
+CONFIG_USE_MUIC,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_MUIC_NOTIFIER,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_MUIC_MANAGER,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_MUIC_CORE,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_MUIC_HV,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_MUIC_SUPPORT_PDIC,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_MUIC_SUPPORT_POWERMETER,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_MUIC_SYSFS,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_HV_MUIC_VOLTAGE_CTRL,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_MUIC_S2MU106,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_HV_MUIC_S2MU106_AFC,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_MUIC_S2MU106_RID,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_MFD_S2MU106,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_USB_HOST_NOTIFY,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_USB_NOTIFY_LAYER,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_USB_NOTIFIER,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_USB_TYPEC_MANAGER_NOTIFIER,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_PDIC_NOTIFIER,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_PDIC_SLSI,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_PDIC_SLSI_NON_MCU,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_PDIC_S2MU106,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_BATTERY_SAMSUNG,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_BATTERY_SAMSUNG_LEGO_STYLE,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_CHARGER_S2MU106,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_PM_S2MU106,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_BATTERY_CISD,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_AFC_CHARGER_MODE,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_BATTERY_AGE_FORECAST,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_BATTERY_NOTIFIER,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_ENABLE_100MA_CHARGING_BEFORE_USB_CONFIGURED,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_LSI_AGING_FUELGAUGE,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_FUELGAUGE_S2MU106,PROJECT,bobule.chang,,,,,,,,,,,,,,
+CONFIG_VBUS_NOTIFIER,PROJECT,bobule.chang,,,,,,,,,,,,,,
 CONFIG_SCHED_HMP,PLATFORM,jing-ting.wu,,y,y,y,y,y,y,y,y,y,y,y,y,y
 CONFIG_SCHED_HMP_PLUS,PLATFORM,jing-ting.wu,,y,y,y,y,y,y,y,y,y,y,y,y,y
 CONFIG_SCHED_HMP_PRIO_FILTER,PLATFORM,jing-ting.wu,,y,y,y,y,y,y,y,y,y,y,y,y,y
@@ -979,6 +1017,8 @@ CONFIG_TOUCHSCREEN_SYNAPTICS_TCM_RECOVERY,PROJECT,Wenqiang Zhang,,,,,,,,,,,,,,
 CONFIG_TOUCHSCREEN_SYNAPTICS_TCM_REFLASH,PROJECT,Wenqiang Zhang,,,,,,,,,,,,,,
 CONFIG_TOUCHSCREEN_SYNAPTICS_TCM_TESTING,PROJECT,Wenqiang Zhang,,,,,,,,,,,,,,
 CONFIG_TOUCHSCREEN_SYNAPTICS_TCM_TOUCH,PROJECT,Wenqiang Zhang,,,,,,,,,,,,,,
+CONFIG_TOUCHSCREEN_ZINITIX_ZT75XX,PROJECT,Bobule Chang,,,,,,,,,,,,,,
+CONFIG_TOUCHSCREEN_IST4050,PROJECT,Bobule Chang,,,,,,,,,,,,,,
 CONFIG_TRUSTONIC_TEE_SUPPORT,PROJECT,tryout.chen,,,,,,,,,,,,,,
 CONFIG_TRUSTONIC_TRUSTED_UI,PROJECT,weiguo.li,new config in this commit,,,,,,,,,,,,,
 CONFIG_TRUSTY,PROJECT,tristan.shieh,,,,,,,,,,,,,,
@@ -1074,3 +1114,4 @@ CONFIG_ZRAM_LZ4_COMPRESS,PROJECT,Chinwen.Chang,,,,,,,,,,,,,,
 CONFIG_ZRAM_LZ4K_COMPRESS,PROJECT,Chinwen.Chang,,,,,,,,,,,,,,
 CONFIG_ZSM,PROJECT,Robbin.Chiu,new config 84a52cb60725192d8ae0c80b58c363c35484cfd4,,,,,,,,,,,,,
 CONFIG_ZSMALLOC,COMMON,,,y,y,y,y,y,y,y,y,y,y,y,y,y
+CONFIG_SND_SOC_SMA1301,PROJECT,aden.lee,,X,X,X,X,X,X,X,X,X,X,X,X,X

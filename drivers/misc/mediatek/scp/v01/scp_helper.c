@@ -1959,8 +1959,13 @@ static int __init scp_init(void)
 
 	/* scp request irq */
 	pr_debug("[SCP] request_irq\n");
+#ifdef CONFIG_SENSORS_SSP
+	ret = request_threaded_irq(scpreg.irq, NULL, scp_A_irq_handler,
+			IRQF_ONESHOT, "SCP A IPC2HOST", NULL);
+#else
 	ret = request_irq(scpreg.irq, scp_A_irq_handler,
 			IRQF_TRIGGER_NONE, "SCP A IPC2HOST", NULL);
+#endif
 	if (ret) {
 		pr_err("[SCP] CM4 A require irq failed\n");
 		goto err;

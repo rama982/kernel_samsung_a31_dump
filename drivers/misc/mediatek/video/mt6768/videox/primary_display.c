@@ -123,6 +123,7 @@ static unsigned int gPresentFenceIndex;
 unsigned int gTriggerDispMode;
 static unsigned int g_keep;
 static unsigned int g_skip;
+
 #if 0 //def CONFIG_TRUSTONIC_TRUSTED_UI
 static struct switch_dev disp_switch_data;
 #endif
@@ -151,6 +152,9 @@ static struct task_struct *primary_delay_trigger_task;
 static struct task_struct *primary_od_trigger_task;
 static struct task_struct *decouple_update_rdma_config_thread;
 static struct task_struct *decouple_trigger_thread;
+#if defined(CONFIG_SMCDSD_PANEL)
+static struct task_struct *framedone_thread;
+#endif
 static struct task_struct *init_decouple_buffer_thread;
 #ifdef MTK_FB_MMDVFS_SUPPORT
 struct pm_qos_request primary_display_qos_request;
@@ -160,6 +164,9 @@ struct pm_qos_request primary_display_mm_freq_request;
 
 static int decouple_mirror_update_rdma_config_thread(void *data);
 static int decouple_trigger_worker_thread(void *data);
+#if defined(CONFIG_SMCDSD_PANEL)
+static int framedone_worker_thread(void *data);
+#endif
 
 struct task_struct *primary_display_frame_update_task;
 wait_queue_head_t primary_display_frame_update_wq;
@@ -1219,10 +1226,11 @@ int primary_display_get_debug_state(char *stringbuf, int buf_len)
 
 	if (lcm_param && lcm_drv)
 		len += scnprintf(stringbuf + len, buf_len - len,
-			"|LCM Driver=[%s]\tResolution=%dx%d,Interface:%s, LCM Connected:%s\n",
+			"|LCM Driver=[%s]\tResolution=%dx%d,Interface:%s, LCM Connected:%s, HBM=%d\n",
 			lcm_drv->name, lcm_param->width, lcm_param->height,
 			(lcm_param->type == LCM_TYPE_DSI) ? "DSI" : "Other",
-			islcmconnected ? "Y" : "N");
+			islcmconnected ? "Y" : "N",
+			disp_lcm_get_hbm_state(pgc->plcm));
 	len += scnprintf(stringbuf + len, buf_len - len,
 		"|State=%s\tlcm_fps=%d\tmax_layer=%d\tmode:%s\tvsync_drop=%d\n",
 		pgc->state == DISP_ALIVE ? "Alive" : "Sleep", pgc->lcm_fps,
@@ -1699,7 +1707,7 @@ void disp_spm_enter_power_down_mode(void)
 
 void _cmdq_start_trigger_loop(void)
 {
-	int ret = 0;
+	int ret = 0, nCnt = 0;
 
 	ret = cmdqRecStartLoop(pgc->cmdq_handle_trigger);
 	if (!primary_display_is_video_mode()) {
@@ -1714,6 +1722,22 @@ void _cmdq_start_trigger_loop(void)
 		 * stuck in dead loop
 		 */
 		cmdqCoreSetEvent(CMDQ_SYNC_TOKEN_STREAM_EOF);
+		/*check GCE REG if it's not ready and set it again*/
+		while (!cmdqCoreGetEvent(CMDQ_SYNC_TOKEN_STREAM_EOF)) {
+			nCnt++;
+
+			if (nCnt > 5) {
+				DISPERR("Retry 5 times, but still set ");
+				DISPERR("CMDQ_SYNC_TOKEN_STREAM_EOF fail\n");
+				break;
+			}
+
+			DISPCHECK("set CMDQ_SYNC_TOKEN_STREAM_EOF = %d\n",
+				cmdqCoreGetEvent(CMDQ_SYNC_TOKEN_STREAM_EOF));
+			usleep_range(5000, 10000);
+			cmdqCoreSetEvent(CMDQ_SYNC_TOKEN_STREAM_EOF);
+		}
+
 		cmdqCoreSetEvent(CMDQ_SYNC_TOKEN_CABC_EOF);
 		cmdqCoreSetEvent(CMDQ_EVENT_DISP_WDMA0_EOF);
 		dprec_event_op(DPREC_EVENT_CMDQ_SET_EVENT_ALLOW);
@@ -3501,6 +3525,7 @@ static int _ovl_fence_release_callback(unsigned long userdata)
 
 	mmprofile_log_ex(ddp_mmp_get_events()->session_release,
 		MMPROFILE_FLAG_END, 1, userdata);
+
 	return ret;
 }
 
@@ -4171,6 +4196,16 @@ int primary_display_init(char *lcm_name, unsigned int lcm_fps,
 		wake_up_process(decouple_trigger_thread);
 	}
 
+#if defined(CONFIG_SMCDSD_PANEL)
+	if (framedone_thread == NULL) {
+		init_waitqueue_head(&pgc->framedone_wait);
+		framedone_thread =
+			kthread_create(framedone_worker_thread,
+				NULL, "primary_framedone");
+		wake_up_process(framedone_thread);
+	}
+#endif
+
 	if (disp_helper_get_stage() == DISP_HELPER_STAGE_NORMAL) {
 		primary_path_aal_task =
 			kthread_create(_disp_primary_path_check_trigger,
@@ -4810,6 +4845,11 @@ int primary_display_suspend(void)
 	if (!primary_display_is_video_mode())
 		polling_rdma_output_line_enable = 0;
 
+#if defined(CONFIG_SMCDSD_PANEL)
+	/* From now, MIPI TX command will be written on register directly */
+	disp_lcm_cmd_q(pgc->plcm, 0);
+#endif
+
 	if (disp_helper_get_option(DISP_OPT_USE_CMDQ)) {
 		DISPCHECK("[POWER]display cmdq trigger loop stop\n");
 		_cmdq_stop_trigger_loop();
@@ -4836,9 +4876,10 @@ int primary_display_suspend(void)
 	if (primary_display_get_power_mode_nolock() == DOZE_SUSPEND) {
 		if (primary_display_get_lcm_power_state_nolock() !=
 			LCM_ON_LOW_POWER) {
+/* These is no need to AOD set to 1 when doze suspend
 			if (pgc->plcm->drv->aod)
 				disp_lcm_aod(pgc->plcm, 1);
-
+*/
 			primary_display_set_lcm_power_state_nolock(
 				LCM_ON_LOW_POWER);
 		}
@@ -4868,6 +4909,10 @@ int primary_display_suspend(void)
 	if (disp_helper_get_option(DISP_OPT_MET_LOG))
 		set_enterulps(1);
 
+#if defined(CONFIG_SMCDSD_PANEL)
+	if (primary_display_get_power_mode_nolock() == FB_SUSPEND)
+		disp_lcm_suspend_power(pgc->plcm);
+#endif
 #ifdef MTK_FB_MMDVFS_SUPPORT
 	mmprofile_log_ex(ddp_mmp_get_events()->primary_pm_qos,
 			MMPROFILE_FLAG_START,
@@ -4980,8 +5025,14 @@ int primary_display_lcm_power_on_state(int alive)
 
 			primary_display_set_lcm_power_state_nolock(
 				LCM_ON_LOW_POWER);
-		} else
+		} else {
+#if defined(CONFIG_SMCDSD_PANEL)
+			/* SEC: update AOD brightness */
+			if (pgc->plcm->drv->aod)
+				disp_lcm_aod(pgc->plcm, 1);
+#endif
 			skip_update = 1;
+		}
 	} else if (primary_display_get_power_mode_nolock() == FB_RESUME) {
 		if (primary_display_get_lcm_power_state_nolock() != LCM_ON) {
 			DISPDBG("[POWER]lcm resume[begin]\n");
@@ -4991,7 +5042,18 @@ int primary_display_lcm_power_on_state(int alive)
 				disp_lcm_resume(pgc->plcm);
 			} else {
 				disp_lcm_aod(pgc->plcm, 0);
+#if defined(CONFIG_SMCDSD_PANEL)
+				/* SEC : after disp_lcm_aod called, panel status is screen off */
+				if (alive) {
+					/* SEC : If DISP block is alive, we turn on screen here. */
+					disp_lcm_set_display_on(pgc->plcm);
+					skip_update = 1;
+				}
+#else
+				if (alive)
+					disp_lcm_set_display_on(pgc->plcm);
 				skip_update = 1;
+#endif
 			}
 			DISPCHECK("[POWER]lcm resume[end]\n");
 			primary_display_set_lcm_power_state_nolock(LCM_ON);
@@ -5015,13 +5077,23 @@ int primary_display_resume(void)
 	DISPCHECK("primary_display_resume begin\n");
 	mmprofile_log_ex(ddp_mmp_get_events()->primary_resume,
 		MMPROFILE_FLAG_START, 0, 0);
-
+#if defined(CONFIG_SMCDSD_PANEL)
+	/* SEC: We called AOD function here, before entering _primary_path_lock to avoid deadlock. */
+	if (pgc->state == DISP_ALIVE) {
+		skip_update = primary_display_lcm_power_on_state(1);
+		DISPCHECK("primary display path is already resume, skip\n");
+		_primary_path_lock(__func__);
+		goto done;
+	}
+	_primary_path_lock(__func__);
+#else
 	_primary_path_lock(__func__);
 	if (pgc->state == DISP_ALIVE) {
 		primary_display_lcm_power_on_state(1);
 		DISPCHECK("primary display path is already resume, skip\n");
 		goto done;
 	}
+#endif
 	mmprofile_log_ex(ddp_mmp_get_events()->primary_resume,
 		MMPROFILE_FLAG_PULSE, 0, 1);
 
@@ -5106,7 +5178,12 @@ int primary_display_resume(void)
 		mmprofile_log_ex(ddp_mmp_get_events()->primary_resume,
 			MMPROFILE_FLAG_PULSE, 1, 2);
 		lcm_param = disp_lcm_get_params(pgc->plcm);
-
+		if (def_data_rate != 0) {
+			lcm_param->dsi.data_rate = def_data_rate;
+			lcm_param->dsi.PLL_CLOCK = def_data_rate / 2;
+		}
+		if (def_dsi_hbp != 0)
+			lcm_param->dsi.horizontal_backporch = def_dsi_hbp;
 		data_config = dpmgr_path_get_last_config(pgc->dpmgr_handle);
 		memcpy(&(data_config->dispif_config), lcm_param,
 			sizeof(struct LCM_PARAMS));
@@ -5272,6 +5349,11 @@ int primary_display_resume(void)
 	mmprofile_log_ex(ddp_mmp_get_events()->primary_resume,
 		MMPROFILE_FLAG_PULSE, 0, 9);
 
+#if defined(CONFIG_SMCDSD_PANEL)
+	/* From now, MIPI TX command will be written via CMDQ engine */
+	disp_lcm_cmd_q(pgc->plcm, 1);
+#endif
+
 	/* primary_display_diagnose(); */
 	mmprofile_log_ex(ddp_mmp_get_events()->primary_resume,
 		MMPROFILE_FLAG_PULSE, 0, 10);
@@ -5295,8 +5377,14 @@ int primary_display_resume(void)
 			/* refresh black picture of ovl bg */
 			_trigger_display_interface(1, NULL, 0);
 			DISPINFO("[POWER]triggger cmdq[end]\n");
-			/* wait for one frame for pms workarround!!!! */
-			mdelay(33);
+
+#ifdef LCM_SET_DISPLAY_ON_DELAY
+			dpmgr_wait_event_timeout(pgc->dpmgr_handle,
+				DISP_PATH_EVENT_FRAME_DONE, HZ * 1);
+#if !defined(CONFIG_SMCDSD_PANEL)
+			disp_lcm_set_display_on(pgc->plcm);
+#endif
+#endif
 		}
 	}
 	mmprofile_log_ex(ddp_mmp_get_events()->primary_resume,
@@ -5360,6 +5448,13 @@ done:
 	lock_primary_wake_lock(1);
 
 	_primary_path_unlock(__func__);
+
+	if (((primary_display_get_power_mode_nolock() == FB_RESUME) ||
+		(primary_display_get_power_mode_nolock() == DOZE)) &&
+		!skip_update) {
+		disp_lcm_set_display_on(pgc->plcm);
+	}
+
 	DISPMSG("skip_update:%d\n", skip_update);
 
 #ifdef CONFIG_MTK_AEE_FEATURE
@@ -5787,6 +5882,25 @@ static int decouple_trigger_worker_thread(void *data)
 	}
 	return 0;
 }
+
+#if defined(CONFIG_SMCDSD_PANEL)
+static int framedone_worker_thread(void *data)
+{
+	struct sched_param param = {.sched_priority = 94 };
+
+	sched_setscheduler(current, SCHED_RR, &param);
+
+	while (!kthread_should_stop()) {
+		ktime_t timestamp = pgc->framedone_timestamp;
+		int ret = wait_event_interruptible(pgc->framedone_wait,
+				(timestamp != pgc->framedone_timestamp));
+		if (!ret)
+			disp_lcm_framedone_notify(pgc->plcm);
+	}
+
+	return 0;
+}
+#endif
 
 static int config_wdma_output(disp_path_handle disp_handle,
 	struct cmdqRecStruct *cmdq_handle,
@@ -6906,8 +7020,8 @@ static int _config_ovl_input(struct disp_frame_cfg_t *cfg,
 	/* check last ovl status: should be idle when config */
 	if (primary_display_is_video_mode() &&
 		!primary_display_is_decouple_mode()) {
-		/* last OVL is DISP_MODULE_OVL0_2L */
-		unsigned long ovl_base = ovl_base_addr(DISP_MODULE_OVL0_2L);
+		/* last OVL is DISP_MODULE_OVL0 */
+		unsigned long ovl_base = ovl_base_addr(DISP_MODULE_OVL0);
 
 		cmdqRecBackupRegisterToSlot(cmdq_handle, pgc->ovl_status_info,
 			0, disp_addr_convert(DISP_REG_OVL_STA + ovl_base));
@@ -7086,6 +7200,7 @@ int primary_display_frame_cfg(struct disp_frame_cfg_t *cfg)
 	struct disp_session_sync_info *session_info =
 		disp_get_session_sync_info_for_debug(cfg->session_id);
 	struct dprec_logger_event *input_event, *output_event, *trigger_event;
+	bool hbm_change = 0;
 
 	if (session_info) {
 		input_event = &session_info->event_setinput;
@@ -7094,6 +7209,10 @@ int primary_display_frame_cfg(struct disp_frame_cfg_t *cfg)
 	} else {
 		input_event = output_event = trigger_event = NULL;
 	}
+
+	hbm_change = primary_display_is_hbm_change(cfg->hbm_en);
+	if (hbm_change)
+		disp_lcm_path_lock(1, pgc->plcm);
 
 	_primary_path_lock(__func__);
 
@@ -7123,6 +7242,11 @@ int primary_display_frame_cfg(struct disp_frame_cfg_t *cfg)
 		dprec_start(trigger_event, cfg->present_fence_idx, proc_name);
 	}
 
+	if (disp_helper_get_option(DISP_OPT_LCM_HBM)) {
+		primary_display_set_lcm_hbm(cfg->hbm_en);
+		primary_display_hbm_wait(cfg->hbm_en);
+	}
+
 	primary_display_trigger_nolock(0, NULL, 0);
 
 	if (cfg->present_fence_idx != (unsigned int)-1)
@@ -7131,6 +7255,10 @@ int primary_display_frame_cfg(struct disp_frame_cfg_t *cfg)
 	dprec_done(trigger_event, 0, 0);
 
 	_primary_path_unlock(__func__);
+
+	if (hbm_change)
+		disp_lcm_path_lock(0, pgc->plcm);
+
 	return ret;
 }
 
@@ -7991,6 +8119,207 @@ int primary_display_vsync_switch(int method)
 	return ret;
 }
 
+int _dsi_set_withrawcmdq(struct disp_lcm_handle *plcm, unsigned int *pdata,
+		unsigned int queue_size, unsigned char force_update)
+{
+	int ret = 0;
+	struct cmdqRecStruct *cmdq_handle_backlight = NULL;
+
+	ret = cmdqRecCreate(CMDQ_SCENARIO_PRIMARY_DISP, &cmdq_handle_backlight);
+	DISPDBG("primary backlight, handle=%p\n", cmdq_handle_backlight);
+
+	if (ret != 0) {
+		DISPERR("fail to create primary cmdq handle for backlight\n");
+		return -1;
+	}
+	if (primary_display_is_video_mode()) {
+		cmdqRecReset(cmdq_handle_backlight);
+		disp_dsi_set_withrawcmdq(plcm, cmdq_handle_backlight, pdata,
+			queue_size, force_update);
+		_cmdq_flush_config_handle_mira(cmdq_handle_backlight, 0);
+	} else {
+		cmdqRecReset(cmdq_handle_backlight);
+		cmdqRecWait(cmdq_handle_backlight, CMDQ_SYNC_TOKEN_CABC_EOF);
+		_cmdq_insert_wait_frame_done_token_mira(cmdq_handle_backlight);
+		disp_dsi_set_withrawcmdq(plcm, cmdq_handle_backlight, pdata,
+			queue_size, force_update);
+		cmdqRecSetEventToken(cmdq_handle_backlight,
+			CMDQ_SYNC_TOKEN_CABC_EOF);
+		_cmdq_flush_config_handle_mira(cmdq_handle_backlight, 0);
+	}
+	cmdqRecDestroy(cmdq_handle_backlight);
+	cmdq_handle_backlight = NULL;
+	return ret;
+}
+
+int _dsi_set_withcmdq(struct disp_lcm_handle *plcm, unsigned int cmd,
+	unsigned char count, unsigned char *para_list,
+	unsigned char force_update)
+{
+	int ret = 0;
+	struct cmdqRecStruct *cmdq_handle_backlight = NULL;
+
+	ret = cmdqRecCreate(CMDQ_SCENARIO_PRIMARY_DISP, &cmdq_handle_backlight);
+	DISPDBG("primary backlight, handle=%p\n", cmdq_handle_backlight);
+
+	if (ret != 0) {
+		DISPERR("fail to create primary cmdq handle for backlight\n");
+		return -1;
+	}
+	if (primary_display_is_video_mode()) {
+		cmdqRecReset(cmdq_handle_backlight);
+		DISPMSG("video mode===>disp_dsi_set_withcmdq\n");
+		DISPMSG("cmd %x count %x force_update %x\n", cmd, count,
+			force_update);
+		disp_dsi_set_withcmdq(plcm, cmdq_handle_backlight, cmd, count,
+			para_list, force_update);
+		DISPMSG("video mode<===disp_dsi_set_withcmdq\n");
+		_cmdq_flush_config_handle_mira(cmdq_handle_backlight, 0);
+	} else {
+		cmdqRecReset(cmdq_handle_backlight);
+		cmdqRecWait(cmdq_handle_backlight, CMDQ_SYNC_TOKEN_CABC_EOF);
+		_cmdq_handle_clear_dirty(cmdq_handle_backlight);
+		_cmdq_insert_wait_frame_done_token_mira(cmdq_handle_backlight);
+		DISPMSG("cmd mode===>disp_dsi_set_withcmdq\n");
+		DISPMSG("cmd %x count %x force_update %x\n", cmd, count,
+			force_update);
+		disp_dsi_set_withcmdq(plcm, cmdq_handle_backlight, cmd, count,
+			para_list, force_update);
+		DISPMSG("cmd mode<===disp_dsi_set_withcmdq\n");
+		cmdqRecSetEventToken(cmdq_handle_backlight,
+			CMDQ_SYNC_TOKEN_CONFIG_DIRTY);
+		cmdqRecSetEventToken(cmdq_handle_backlight,
+			CMDQ_SYNC_TOKEN_CABC_EOF);
+		_cmdq_flush_config_handle_mira(cmdq_handle_backlight, 0);
+	}
+	cmdqRecDestroy(cmdq_handle_backlight);
+	cmdq_handle_backlight = NULL;
+	return ret;
+}
+
+int primary_display_dsi_set_withrawcmdq(unsigned int *pdata,
+	unsigned int queue_size, unsigned char force_update)
+{
+	int ret = 0;
+
+	DISPFUNC();
+/*#ifndef CONFIG_MTK_AAL_SUPPORT*/
+	_primary_path_switch_dst_lock();
+	_primary_path_lock(__func__);
+/*#endif*/
+	if (pgc->state == DISP_SLEPT)
+		DISPERR("Sleep State set backlight invalid\n");
+	else {
+		primary_display_idlemgr_kick(__func__, 0);
+		if (primary_display_cmdq_enabled())
+			_dsi_set_withrawcmdq(pgc->plcm, pdata, queue_size,
+				force_update);
+		atomic_set(&delayed_trigger_kick, 1);
+	}
+
+/*#ifndef CONFIG_MTK_AAL_SUPPORT*/
+	_primary_path_unlock(__func__);
+	_primary_path_switch_dst_unlock();
+/*#endif*/
+	return ret;
+}
+
+int primary_display_dsi_set_withcmdq(unsigned int cmd, unsigned char count,
+	unsigned char *para_list, unsigned char force_update)
+{
+	int ret = 0;
+
+	DISPFUNC();
+
+/*#ifndef CONFIG_MTK_AAL_SUPPORT*/
+	_primary_path_switch_dst_lock();
+	_primary_path_lock(__func__);
+/*#endif*/
+	DISPMSG("===%s===\n", __func__);
+	if (pgc->state == DISP_SLEPT) {
+		DISPERR("Sleep State set backlight invalid\n");
+	} else {
+		primary_display_idlemgr_kick(__func__, 0);
+		if (primary_display_cmdq_enabled()) {
+			DISPMSG("===>_dsi_set_withcmdq\n");
+			DISPMSG("    cmd %x count %x force_update %x\n",
+				cmd, count, force_update);
+			_dsi_set_withcmdq(pgc->plcm, cmd, count, para_list,
+			force_update);
+			DISPMSG("<===_dsi_set_withcmdq\n");
+		}
+		atomic_set(&delayed_trigger_kick, 1);
+	}
+/*#ifndef CONFIG_MTK_AAL_SUPPORT*/
+	_primary_path_unlock(__func__);
+	_primary_path_switch_dst_unlock();
+/*#endif*/
+
+	return ret;
+}
+
+int _dsi_read_cmdq_cmd(struct disp_lcm_handle *plcm, unsigned int data_id,
+	unsigned int offset, unsigned int cmd, unsigned char *buffer,
+	unsigned char size)
+{
+	int ret = 0;
+	struct cmdqRecStruct *cmdq_handle = NULL;
+
+	ret = cmdqRecCreate(CMDQ_SCENARIO_PRIMARY_DISP, &cmdq_handle);
+	DISPDBG("primary handle=%p\n", cmdq_handle);
+
+	if (ret != 0) {
+		DISPERR("fail to create primary cmdq handle for read\n");
+		return -1;
+	}
+
+	if (!primary_display_is_video_mode()) {
+		cmdqRecReset(cmdq_handle);
+		cmdqRecWait(cmdq_handle, CMDQ_SYNC_TOKEN_CABC_EOF);
+		_cmdq_handle_clear_dirty(cmdq_handle);
+		_cmdq_insert_wait_frame_done_token_mira(cmdq_handle);
+		DISPMSG("CMD=>disp_lcm_util_set_prepare_cmdq_v2\n");
+		DISPMSG("data_id %x cmd %x buffer %p size %d\n", data_id, cmd,
+			buffer, size);
+		ret = disp_lcm_util_set_read_cmdq_cmd_v2(plcm, cmdq_handle,
+			data_id, offset, cmd, buffer, size);
+		DISPMSG("CMD<=disp_lcm_util_set_prepare_cmdq_v2\n");
+	}
+	cmdqRecDestroy(cmdq_handle);
+	cmdq_handle = NULL;
+	return ret;
+}
+
+int primary_display_dsi_read_cmdq_cmd(unsigned int data_id,
+	unsigned int offset, unsigned int cmd, unsigned char *buffer,
+	unsigned char size)
+{
+	int ret = 0;
+
+	DISPFUNC();
+
+	_primary_path_switch_dst_lock();
+	_primary_path_lock(__func__);
+	DISPMSG("%s+\n", __func__);
+	if (pgc->state == DISP_SLEPT) {
+		DISPERR("Sleep State read DSI invalid\n");
+	} else {
+		primary_display_idlemgr_kick(__func__, 0);
+		if (primary_display_cmdq_enabled()) {
+			DISPMSG("_dsi_read_cmdq_cmd+\n");
+			ret = _dsi_read_cmdq_cmd(pgc->plcm, data_id, offset,
+				cmd, buffer, size);
+			DISPMSG("_dsi_read_cmdq_cmd-\n");
+		}
+		atomic_set(&delayed_trigger_kick, 1);
+	}
+	_primary_path_unlock(__func__);
+	_primary_path_switch_dst_unlock();
+	DISPMSG("%s-\n", __func__);
+
+	return ret;
+}
+
 int _set_backlight_by_cmdq(unsigned int level)
 {
 	int ret = 0;
@@ -8106,6 +8435,130 @@ int _set_backlight_by_cpu(unsigned int level)
 	return ret;
 }
 
+static int _primary_display_set_lcm_hbm(bool en)
+{
+	int ret = 0;
+	struct cmdqRecStruct *qhandle_hbm = NULL;
+
+	pr_info("[SEC_MASK] %s: %s ++\n", __func__, en ? "[on]" : "[off]");
+
+	ret = cmdqRecCreate(CMDQ_SCENARIO_PRIMARY_DISP, &qhandle_hbm);
+	if (ret) {
+		DISPMSG("%s:failed to create cmdq handle\n", __func__);
+		return -1;
+	}
+
+	if (!primary_display_is_video_mode()) {
+#if defined(CONFIG_SMCDSD_PANEL)
+		/* wait for TE */
+		pr_info("[SEC_MASK] %s TE wait. (0)\n", __func__);
+		dpmgr_wait_event_timeout(pgc->dpmgr_handle,
+			DISP_PATH_EVENT_IF_VSYNC, HZ);
+		pr_info("[SEC_MASK] %s TE arrived. (0)\n", __func__);
+#endif
+		cmdqRecReset(qhandle_hbm);
+		cmdqRecWait(qhandle_hbm, CMDQ_SYNC_TOKEN_CABC_EOF);
+		_cmdq_handle_clear_dirty(qhandle_hbm);
+
+		_cmdq_insert_wait_frame_done_token_mira(qhandle_hbm);
+
+		/* Stack MIPI cmd for HBM on qhandle_hbm */
+		disp_lcm_set_hbm(en, pgc->plcm, qhandle_hbm);
+
+		cmdqRecSetEventToken(qhandle_hbm, CMDQ_SYNC_TOKEN_CABC_EOF);
+
+		/* Flush MIPI cmd for HBM on qhandle_hbm */
+		_cmdq_flush_config_handle_mira(qhandle_hbm, 1);
+		pr_info("[SEC_MASK] %s TE cmd flush done.\n", __func__);
+	}
+
+	cmdqRecDestroy(qhandle_hbm);
+	qhandle_hbm = NULL;
+
+	pr_info("[SEC_MASK] %s: %s --\n", __func__, en ? "[on]" : "[off]");
+
+	return ret;
+}
+
+bool primary_display_is_hbm_change(bool en)
+{
+	int state = 0;
+
+	state = disp_lcm_get_hbm_state(pgc->plcm);
+	if (state == -1)
+		return 0;
+	else if (state == en)
+		return 0;
+
+	return true;
+}
+
+int primary_display_set_lcm_hbm(bool en)
+{
+	int state = 0;
+
+	state = disp_lcm_get_hbm_state(pgc->plcm);
+	if (state == -1)
+		return -EINVAL;
+	else if (state == en)
+		return 0;
+
+	if (disp_helper_get_stage() != DISP_HELPER_STAGE_NORMAL) {
+		DISPMSG("%s: skip, stage:%s\n", __func__,
+			disp_helper_stage_spy());
+		return 0;
+	}
+	if (pgc->state == DISP_SLEPT) {
+		DISPMSG("%s: skip, slept\n", __func__);
+		return 0;
+	}
+
+	primary_display_idlemgr_kick(__func__, 0);
+	if (primary_display_cmdq_enabled()) {
+		pr_info("[SEC_MASK] %s: set LCM hbm en:%d\n", __func__, en);
+
+		_primary_display_set_lcm_hbm(en);
+
+		/* Wait for HBM ready */
+		disp_lcm_set_hbm_wait(true, pgc->plcm);
+	}
+
+	return 0;
+}
+
+int primary_display_hbm_wait(bool en)
+{
+	int wait = 0;
+	unsigned int wait_count = 0;
+	unsigned int total_count = 0;
+
+	wait = disp_lcm_get_hbm_wait(pgc->plcm);
+	if (wait == -1)
+		return -EINVAL;
+	else if (wait != 1)
+		return 0;
+
+	total_count = wait_count = disp_lcm_get_hbm_wait_frame(en, pgc->plcm);
+	if (wait_count == -1)
+		return -EINVAL;
+
+	pr_info("LCM hbm %s wait %u-TE\n", en ? "enable" : "disable",
+		wait_count);
+
+	while (wait_count) {
+		wait_count--;
+		pr_info("[SEC_MASK] %s TE wait. (%d).\n", __func__, total_count - wait_count, total_count);
+		primary_display_idlemgr_kick(__func__, 0);
+		dpmgr_wait_event_timeout(pgc->dpmgr_handle,
+			DISP_PATH_EVENT_IF_VSYNC, HZ);
+		pr_info("[SEC_MASK] %s TE arrived. (%d).\n", __func__, total_count - wait_count, total_count);
+		find_abd_save_str("mask_te");
+	}
+
+	disp_lcm_set_hbm_wait(false, pgc->plcm);
+	return 0;
+}
+
 int primary_display_setbacklight_nolock(unsigned int level)
 {
 	static unsigned int last_level;
@@ -8216,6 +8669,110 @@ int _set_lcm_cmd_by_cmdq(unsigned int *lcm_cmd, unsigned int *lcm_count,
 	return ret;
 }
 
+int _set_lcm_func_call(void (*func4)(void *, void *, void *, void *),
+	void *data1, void *data2, void *data3, void *data4)
+{
+	int ret = 0;
+	struct cmdqRecStruct *cmdq_handle_backlight = NULL;
+
+	mmprofile_log_ex(ddp_mmp_get_events()->primary_set_bl,
+		MMPROFILE_FLAG_PULSE, 1, 1);
+	ret = cmdqRecCreate(CMDQ_SCENARIO_PRIMARY_DISP, &cmdq_handle_backlight);
+	DISPDBG("primary backlight, handle=%p\n", cmdq_handle_backlight);
+	if (ret != 0) {
+		DISPERR("fail to create primary cmdq handle for backlight\n");
+		return -1;
+	}
+
+	if (primary_display_is_video_mode()) {
+		mmprofile_log_ex(ddp_mmp_get_events()->primary_set_bl,
+			MMPROFILE_FLAG_PULSE, 1, 2);
+		cmdqRecReset(cmdq_handle_backlight);
+
+		func4(data1, data2, data3, data4);
+
+		_cmdq_flush_config_handle_mira(cmdq_handle_backlight, 1);
+		DISPMSG("[BL]_set_backlight_by_cmdq ret=%d\n", ret);
+	} else {
+		mmprofile_log_ex(ddp_mmp_get_events()->primary_set_bl,
+			MMPROFILE_FLAG_PULSE, 1, 3);
+		cmdqRecReset(cmdq_handle_backlight);
+		cmdqRecWait(cmdq_handle_backlight, CMDQ_SYNC_TOKEN_CABC_EOF);
+		_cmdq_handle_clear_dirty(cmdq_handle_backlight);
+		_cmdq_insert_wait_frame_done_token_mira(cmdq_handle_backlight);
+
+		func4(data1, data2, data3, data4);
+
+		cmdqRecSetEventToken(cmdq_handle_backlight,
+			CMDQ_SYNC_TOKEN_CONFIG_DIRTY);
+		cmdqRecSetEventToken(cmdq_handle_backlight,
+			CMDQ_SYNC_TOKEN_CABC_EOF);
+		mmprofile_log_ex(ddp_mmp_get_events()->primary_set_bl,
+			MMPROFILE_FLAG_PULSE, 1, 4);
+		_cmdq_flush_config_handle_mira(cmdq_handle_backlight, 1);
+		mmprofile_log_ex(ddp_mmp_get_events()->primary_set_bl,
+			MMPROFILE_FLAG_PULSE, 1, 6);
+		DISPMSG("[BL]_set_backlight_by_cmdq ret=%d\n", ret);
+	}
+	cmdqRecDestroy(cmdq_handle_backlight);
+	cmdq_handle_backlight = NULL;
+	mmprofile_log_ex(ddp_mmp_get_events()->primary_set_bl,
+		MMPROFILE_FLAG_PULSE, 1, 5);
+
+	return ret;
+}
+
+int primary_display_setlcm_func_call(
+	void (*func4)(void *, void *, void *, void *), void *data1, void *data2,
+	void *data3, void *data4)
+{
+	int ret = 0;
+
+	DISPFUNC();
+	if (disp_helper_get_stage() != DISP_HELPER_STAGE_NORMAL) {
+		DISPMSG("%s skip due to stage %s\n", __func__,
+			disp_helper_stage_spy());
+		return 0;
+	}
+
+	mmprofile_log_ex(ddp_mmp_get_events()->primary_set_bl,
+		MMPROFILE_FLAG_START, 0, 0);
+#ifndef CONFIG_MTK_AAL_SUPPORT
+	_primary_path_switch_dst_lock();
+
+	_primary_path_lock(__func__);
+#endif
+	if (pgc->state == DISP_SLEPT) {
+		DISPERR("Sleep State set backlight invalid\n");
+	} else {
+		primary_display_idlemgr_kick(__func__, 0);
+		if (primary_display_cmdq_enabled()) {
+			if (primary_display_is_video_mode()) {
+				mmprofile_log_ex(
+					ddp_mmp_get_events()->primary_set_bl,
+					MMPROFILE_FLAG_PULSE, 0, 7);
+				_set_lcm_func_call(func4, data1, data2, data3,
+					data4);
+			} else {
+				_set_lcm_func_call(func4, data1, data2, data3,
+					data4);
+			}
+			atomic_set(&delayed_trigger_kick, 1);
+		} else {
+			/*_set_backlight_by_cpu(level);*/
+		}
+	}
+#ifndef CONFIG_MTK_AAL_SUPPORT
+	_primary_path_unlock(__func__);
+
+	_primary_path_switch_dst_unlock();
+#endif
+	mmprofile_log_ex(ddp_mmp_get_events()->primary_set_bl,
+		MMPROFILE_FLAG_END, 0, 0);
+	return ret;
+
+}
+
 int primary_display_setlcm_cmd(unsigned int *lcm_cmd, unsigned int *lcm_count,
 	unsigned int *lcm_value)
 {
@@ -8274,6 +8831,8 @@ int primary_display_mipi_clk_change(unsigned int clk_value)
 	_primary_path_lock(__func__);
 
 	if (!primary_display_is_video_mode()) {
+		pgc->plcm->params->dsi.PLL_CLOCK = clk_value;
+		_primary_path_unlock(__func__);
 		DISPCHECK("clk change CMD Mode return\n");
 		return 0;
 	}

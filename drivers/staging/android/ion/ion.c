@@ -474,6 +474,9 @@ struct ion_handle *ion_alloc(struct ion_client *client, size_t len,
 	int ret;
 	unsigned long long start, end;
 	unsigned int heap_mask = ~0;
+#ifdef CONFIG_ION_RBIN_HEAP
+	bool rbin_try = false;
+#endif
 
 	pr_debug("%s: len %zu align %zu heap_id_mask %u flags %x\n", __func__,
 		 len, align, heap_id_mask, flags);
@@ -483,6 +486,13 @@ struct ion_handle *ion_alloc(struct ion_client *client, size_t len,
 	 */
 	if (heap_id_mask == heap_mask)
 		heap_id_mask = ION_HEAP_MULTIMEDIA_MASK;
+
+#ifdef CONFIG_ION_RBIN_HEAP
+	if (heap_id_mask == ION_HEAP_CAMERA_MASK) {
+		rbin_try = true;
+		heap_id_mask = ION_HEAP_RBIN_MASK;
+	}
+#endif
 
 	/*
 	 * traverse the list of heaps available in this system in priority
@@ -510,6 +520,9 @@ struct ion_handle *ion_alloc(struct ion_client *client, size_t len,
 	start = sched_clock();
 
 	down_read(&dev->lock);
+#ifdef CONFIG_ION_RBIN_HEAP
+repeat:
+#endif
 	plist_for_each_entry(heap, &dev->heaps, node) {
 		/* if the caller didn't specify this heap id */
 		if (!((1 << heap->id) & heap_id_mask))
@@ -518,6 +531,13 @@ struct ion_handle *ion_alloc(struct ion_client *client, size_t len,
 		if (!IS_ERR(buffer))
 			break;
 	}
+#ifdef CONFIG_ION_RBIN_HEAP
+	if (rbin_try && (!buffer || IS_ERR(buffer))) {
+		rbin_try = false;
+		heap_id_mask = ION_HEAP_CAMERA_MASK;
+		goto repeat;
+	}
+#endif
 	up_read(&dev->lock);
 
 	if (!buffer) {

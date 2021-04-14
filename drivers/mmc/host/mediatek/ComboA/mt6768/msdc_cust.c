@@ -250,8 +250,14 @@ void msdc_emmc_power(struct msdc_host *host, u32 on)
 		msdc_set_rdsel(host, MSDC_TDRDSEL_1V8, 0);
 	}
 
-	msdc_ldo_power(on, host->mmc->supply.vmmc,
-		VOL_3000, &host->power_flash);
+	/* emmc power always on at sleep */
+	if (!msdc_emmc_pwr_ao(host)) {
+		msdc_ldo_power(on, host->mmc->supply.vmmc,
+				VOL_3000, &host->power_flash);
+	} else if(msdc_emmc_pwr_ao(host) && on) {
+		msdc_ldo_power(on, host->mmc->supply.vmmc,
+				VOL_3000, &host->power_flash);
+	}
 #endif
 #ifdef MTK_MSDC_BRINGUP_DEBUG
 	msdc_dump_ldo_sts(NULL, 0, NULL, host);
@@ -271,33 +277,9 @@ void msdc_sd_power(struct msdc_host *host, u32 on)
 		if (host->hw->flags & MSDC_SD_NEED_POWER)
 			card_on = 1;
 
-		/* Disable VMCH OC */
-		if (!card_on)
-			pmic_enable_interrupt(INT_VMCH_OC, 0, "sdcard");
-
 		/* VMCH VOLSEL */
-		msdc_ldo_power(card_on, host->mmc->supply.vmmc, VOL_3000,
+		msdc_ldo_power(card_on, host->mmc->supply.vmmc, VOL_2950,
 			&host->power_flash);
-
-		if (card_on) {
-			if (host->hw->cd_level == 1) {
-				/* 1: high; 0: low, vmch fast off
-				 * hw_det default high active
-				 */
-				pmic_set_register_value(PMIC_RG_LDO_VMCH_SD_POL,
-							0);
-			}
-			pmic_set_register_value(PMIC_RG_LDO_VMCH_SD_EN, 1);
-		} else {
-			udelay(1500);
-			pmic_set_register_value(PMIC_RG_LDO_VMCH_SD_EN, 0);
-		}
-
-		/* Enable VMCH OC */
-		if (card_on) {
-			mdelay(3);
-			pmic_enable_interrupt(INT_VMCH_OC, 1, "sdcard");
-		}
 
 		/* VMC VOLSEL */
 		/* rollback to 0mv in REG_VMC_VOSEL_CAL
@@ -1000,33 +982,34 @@ void msdc_pin_config_by_id(u32 id, u32 mode)
 		if (mode == MSDC_PIN_PULL_NONE) {
 		} else if (mode == MSDC_PIN_PULL_DOWN) {
 			/* Switch MSDC0_* to
-			 * cmd:pd50k,clk:pd50k, dat:pd50k,rstb:pu50k,dsl:pd50k
+			 * cmd:pd50k,clk:High-Z, dat:pd50k,rstb:pu50k,dsl:pd50k
 			 */
-			MSDC_SET_FIELD(MSDC0_GPIO_PUPD, 0xFFF, 0x7FF);
+			MSDC_SET_FIELD(MSDC0_GPIO_PUPD, 0xFFF, 0x7FE);
 			MSDC_SET_FIELD(MSDC0_GPIO_R0, 0xFFF, 0);
-			MSDC_SET_FIELD(MSDC0_GPIO_R1, 0xFFF, 0xFFF);
+			MSDC_SET_FIELD(MSDC0_GPIO_R1, 0xFFF, 0xFFE);
 		} else if (mode == MSDC_PIN_PULL_UP) {
 			/* Switch MSDC0_* to
-			 * cmd:pu10k,clk:pd50k, dat:pu10k,rstb:pu10k,dsl:pd50k
+			 * cmd:pu10k,clk:High-Z, dat:pu10k,rstb:pu10k,dsl:pd50k
 			 */
-			MSDC_SET_FIELD(MSDC0_GPIO_PUPD, 0xFFF, 0x401);
+			MSDC_SET_FIELD(MSDC0_GPIO_PUPD, 0xFFF, 0x400);
 			MSDC_SET_FIELD(MSDC0_GPIO_R0, 0xFFF, 0xBFE);
-			MSDC_SET_FIELD(MSDC0_GPIO_R1, 0xFFF, 0x401);
+			MSDC_SET_FIELD(MSDC0_GPIO_R1, 0xFFF, 0x400);
 		}
 	} else if (id == 1) {
 		if (mode == MSDC_PIN_PULL_NONE) {
 		} else if (mode == MSDC_PIN_PULL_DOWN) {
 			/* Switch MSDC1_* to 50K ohm PD */
-			MSDC_SET_FIELD(MSDC1_GPIO_PUPD, 0x3F, 0x3F);
+			/* Switch MSDC1_CLK to High-Z */
+			MSDC_SET_FIELD(MSDC1_GPIO_PUPD, 0x3F, 0x3E);
 			MSDC_SET_FIELD(MSDC1_GPIO_R0, 0x3F, 0);
-			MSDC_SET_FIELD(MSDC1_GPIO_R1, 0x3F, 0x3F);
+			MSDC_SET_FIELD(MSDC1_GPIO_R1, 0x3F, 0x3E);
 		} else if (mode == MSDC_PIN_PULL_UP) {
-			/* Switch MSDC1_CLK to 50K ohm PD,
+			/* Switch MSDC1_CLK to High-Z,
 			 * MSDC1_CMD/MSDC1_DAT* to 10K ohm PU
 			 */
-			MSDC_SET_FIELD(MSDC1_GPIO_PUPD, 0x3F, 0x1);
+			MSDC_SET_FIELD(MSDC1_GPIO_PUPD, 0x3F, 0x0);
 			MSDC_SET_FIELD(MSDC1_GPIO_R0, 0x3F, 0x3E);
-			MSDC_SET_FIELD(MSDC1_GPIO_R1, 0x3F, 0x1);
+			MSDC_SET_FIELD(MSDC1_GPIO_R1, 0x3F, 0x0);
 		}
 	} else if (id == 2) {
 	}
@@ -1194,6 +1177,11 @@ int msdc_of_parse(struct platform_device *pdev, struct mmc_host *mmc)
 	if (of_property_read_u8(np, "cd_level", &host->hw->cd_level))
 		pr_notice("[msdc%d] cd_level isn't found in device tree\n",
 			host->id);
+
+	if (of_find_property(np, "emmc_power_ao", &len))
+		msdc_set_emmc_pwr_ao(host);
+	else
+		msdc_clr_emmc_pwr_ao(host);
 
 	msdc_get_register_settings(host, np);
 

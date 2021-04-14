@@ -15,10 +15,17 @@
 #include <linux/workqueue.h>
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
+#ifdef CONFIG_SEC_PM
+#include <linux/fb.h>
+#endif
 
 #include "power.h"
 
 DEFINE_MUTEX(pm_mutex);
+
+#ifdef CONFIG_SEC_PM
+static struct delayed_work ws_work;
+#endif
 
 #ifdef CONFIG_PM_SLEEP
 
@@ -773,6 +780,38 @@ static int __init pm_start_workqueue(void)
 	return pm_wq ? 0 : -ENOMEM;
 }
 
+#ifdef CONFIG_SEC_PM
+static void handle_ws_work(struct work_struct *work)
+{
+	wakeup_sources_stats_active();
+	schedule_delayed_work(&ws_work, msecs_to_jiffies(5000));
+}
+
+static int state_change_fb_notifier_callback(struct notifier_block *nb,
+				unsigned long event, void *data)
+{
+	struct fb_event *evdata = data;
+	int blank;
+
+	if (event != FB_EVENT_BLANK)
+		return 0;
+
+	blank = *(int *)evdata->data;
+
+	if (blank == FB_BLANK_UNBLANK) {
+		cancel_delayed_work_sync(&ws_work);
+	} else {
+		schedule_delayed_work(&ws_work, msecs_to_jiffies(5000));
+	}
+
+	return NOTIFY_OK;
+}
+
+static struct notifier_block fb_notifier = {
+	.notifier_call = state_change_fb_notifier_callback,
+};
+#endif
+
 static int __init pm_init(void)
 {
 	int error = pm_start_workqueue();
@@ -788,6 +827,10 @@ static int __init pm_init(void)
 	if (error)
 		return error;
 	pm_print_times_init();
+#ifdef CONFIG_SEC_PM
+	fb_register_client(&fb_notifier);
+	INIT_DELAYED_WORK(&ws_work, handle_ws_work);
+#endif	
 	return pm_autosleep_init();
 }
 

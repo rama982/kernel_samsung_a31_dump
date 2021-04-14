@@ -4829,7 +4829,6 @@ static const struct file_operations dip_p2_ke_dump_proc_fops = {
 	.owner = THIS_MODULE,
 	.open = proc_dip_p2_ke_dump_open,
 	.read = seq_read,
-	.release = single_release,
 };
 
 /**************************************************************
@@ -4946,7 +4945,6 @@ static const struct file_operations dip_p2_dump_proc_fops = {
 	.owner = THIS_MODULE,
 	.open = proc_dip_p2_dump_open,
 	.read = seq_read,
-	.release = single_release,
 };
 /**************************************************************
  *
@@ -4955,13 +4953,6 @@ static int dip_dump_read(struct seq_file *m, void *v)
 {
 
 	int i;
-
-	spin_lock(&(IspInfo.SpinLockClock));
-	if (G_u4DipEnClkCnt == 0) {
-		spin_unlock(&(IspInfo.SpinLockClock));
-		return 0;
-	}
-	spin_unlock(&(IspInfo.SpinLockClock));
 
 	seq_puts(m, "\n============ dip dump register============\n");
 	seq_puts(m, "dip top control\n");
@@ -5031,7 +5022,6 @@ static const struct file_operations dip_dump_proc_fops = {
 	.owner = THIS_MODULE,
 	.open = proc_dip_dump_open,
 	.read = seq_read,
-	.release = single_release,
 };
 /**************************************************************
  *

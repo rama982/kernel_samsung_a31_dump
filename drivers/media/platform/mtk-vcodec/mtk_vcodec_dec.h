@@ -24,7 +24,6 @@
 #define VCODEC_DEC_4K_CODED_HEIGHT      2304U
 #define MTK_VDEC_MAX_W  2048U
 #define MTK_VDEC_MAX_H  1088U
-#define MTK_MAX_CTRLS_HINT      20
 
 /**
  * struct vdec_fb  - decoder frame buffer
@@ -95,6 +94,7 @@ extern const struct v4l2_m2m_ops mtk_vdec_m2m_ops;
  */
 void mtk_vdec_unlock(struct mtk_vcodec_ctx *ctx, u32 hw_id);
 void mtk_vdec_lock(struct mtk_vcodec_ctx *ctx, u32 hw_id);
+void mtk_vdec_hw_break(struct mtk_vcodec_ctx *ctx);
 int mtk_vcodec_dec_queue_init(void *priv, struct vb2_queue *src_vq,
 	struct vb2_queue *dst_vq);
 void mtk_vcodec_dec_set_default_params(struct mtk_vcodec_ctx *ctx);

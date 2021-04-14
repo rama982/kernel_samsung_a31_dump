@@ -27,7 +27,7 @@
 static bool idle_dram_feature_enable = MTK_IDLE_FEATURE_ENABLE_IDLEDRAM;
 static bool idle_dram_bypass_idle_cond;
 
-static unsigned int idle_dram_flag = MTK_IDLE_LOG_REDUCE;
+static unsigned int idle_dram_flag = MTK_IDLE_LOG_DISABLE;
 
 /* [ByChip] Internal weak functions: implemented in mtk_idle_cond_check.c */
 void __attribute__((weak)) mtk_idle_cg_monitor(int sel) {}

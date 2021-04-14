@@ -51,6 +51,9 @@
 	pr_debug("%s: " fmt, rdev_get_name(rdev), ##__VA_ARGS__)
 
 static DEFINE_MUTEX(regulator_list_mutex);
+#ifdef CONFIG_SEC_PM
+static LIST_HEAD(regulator_list);
+#endif
 static LIST_HEAD(regulator_map_list);
 static LIST_HEAD(regulator_ena_gpio_list);
 static LIST_HEAD(regulator_supply_alias_list);
@@ -3464,6 +3467,78 @@ int regulator_set_load(struct regulator *regulator, int uA_load)
 }
 EXPORT_SYMBOL_GPL(regulator_set_load);
 
+#ifdef CONFIG_SEC_PM
+static unsigned int __regulator_get_mode(struct regulator_dev *rdev)
+{
+	int ret;
+
+	/* sanity check */
+	if (!rdev->desc->ops->get_mode) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	ret = rdev->desc->ops->get_mode(rdev);
+out:
+	return ret;
+}
+
+static int regulator_check_str(struct regulator *reg,
+	   unsigned int *slen, char *snames)
+{
+	if (reg->supply_name) {
+		if (*slen + strlen(reg->supply_name) + 3 > 80)
+			return -ENOMEM;
+		*slen += snprintf(snames + *slen,
+				strlen(reg->supply_name) + 3,
+				", %s", reg->supply_name);
+	}
+	return 0;
+}
+
+void regulator_showall_enabled(void)
+{
+	struct regulator_dev *rdev;
+	unsigned int cnt = 0;
+	unsigned int slen;
+	struct regulator *reg;
+	char snames[80];
+
+	pr_info("---Enabled regulators---\n");
+	mutex_lock(&regulator_list_mutex);
+	list_for_each_entry(rdev, &regulator_list, list) {
+		mutex_lock(&rdev->mutex);
+		if (_regulator_is_enabled(rdev)) {
+			if (rdev->desc->ops) {
+				slen = 0;
+				list_for_each_entry(reg,
+						&rdev->consumer_list, list) {
+					if (regulator_check_str(reg,
+								&slen, snames))
+						break;
+				}
+
+				pr_info("%s: %duV, 0x%x mode%s\n",
+						rdev_get_name(rdev),
+						_regulator_get_voltage(rdev),
+						__regulator_get_mode(rdev),
+						slen ? snames : ", null");
+			} else {
+				pr_info("%s enabled\n", rdev_get_name(rdev));
+			}
+			cnt++;
+		}
+		mutex_unlock(&rdev->mutex);
+	}
+	mutex_unlock(&regulator_list_mutex);
+
+	if (cnt)
+		pr_info("---Enabled regulator count: %d---\n", cnt);
+	else
+		pr_info("---No regulators enabled---\n");
+}
+#endif
+
 /**
  * regulator_allow_bypass - allow the regulator to go into bypass mode
  *
@@ -4110,6 +4185,9 @@ regulator_register(const struct regulator_desc *regulator_desc,
 		mutex_unlock(&regulator_list_mutex);
 	}
 
+#ifdef CONFIG_SEC_PM
+	list_add(&rdev->list, &regulator_list);
+#endif
 	if (!rdev->desc->ops->get_voltage &&
 	    !rdev->desc->ops->list_voltage &&
 	    !rdev->desc->fixed_uV)

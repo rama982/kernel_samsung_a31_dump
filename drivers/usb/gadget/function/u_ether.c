@@ -500,6 +500,20 @@ static void process_rx_w(struct work_struct *work)
 		if (status < 0
 				|| ETH_HLEN > skb->len
 				|| skb->len > ETH_FRAME_LEN) {
+#ifdef CONFIG_USB_NCM_SUPPORT_MTU_CHANGE
+		/*
+		  Need to revisit net->mtu	does not include header size incase of changed MTU
+		*/
+			if(!strcmp(dev->port_usb->func.name,"ncm")) {
+				if (status < 0
+					|| ETH_HLEN > skb->len
+					|| skb->len > (dev->net->mtu + ETH_HLEN)) {
+					printk(KERN_ERR "usb: %s  drop incase of NCM rx length %d\n",__func__,skb->len);
+				} else {
+					goto process_frame;
+				}
+			}
+#endif
 			dev->net->stats.rx_errors++;
 			dev->net->stats.rx_length_errors++;
 			rndis_test_rx_error++;
@@ -507,6 +521,9 @@ static void process_rx_w(struct work_struct *work)
 			dev_kfree_skb_any(skb);
 			continue;
 		}
+#ifdef CONFIG_USB_NCM_SUPPORT_MTU_CHANGE
+process_frame:
+#endif
 		skb->protocol = eth_type_trans(skb, dev->net);
 		dev->net->stats.rx_packets++;
 		dev->net->stats.rx_bytes += skb->len;
@@ -577,6 +594,9 @@ static void tx_complete(struct usb_ep *ep, struct usb_request *req)
 	default:
 		dev->net->stats.tx_errors++;
 		VDBG(dev, "tx err %d\n", req->status);
+#ifdef CONFIG_USB_NCM_SUPPORT_MTU_CHANGE
+		printk(KERN_ERR"usb:%s tx err %d\n",__func__, req->status);
+#endif
 		/* FALLTHROUGH */
 	case -ECONNRESET:		/* unlink */
 	case -ESHUTDOWN:		/* disconnect etc */

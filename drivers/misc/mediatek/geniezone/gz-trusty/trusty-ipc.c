@@ -59,6 +59,15 @@
 #define MAX_TOKEN_LEN (8)
 #define HASH_SALT ((const void *)0xCAFE)
 
+#define test_dyn_rkp 1
+#if test_dyn_rkp
+uint64_t pa_tipc_chan_queue_msg;
+uint64_t pa_tipc_create_channel;
+uint64_t pa_tipc_k_connect;
+uint64_t pa_tipc_k_write;
+uint64_t pa_rxbuf;
+#endif
+
 /* define a hash table with 1<<5 buckets */
 DEFINE_HASHTABLE(tee_routing_htable, 5);
 
@@ -1915,6 +1924,10 @@ static int tipc_virtio_probe(struct virtio_device *vdev)
 			goto err_free_rx_buffers;
 		}
 
+#if test_dyn_rkp
+		pa_rxbuf = (uint64_t) rxbuf->buf_va;
+#endif
+
 		sg_init_one(&sg, rxbuf->buf_va, rxbuf->buf_sz);
 		err = virtqueue_add_inbuf(vds->rxvq, &sg, 1, rxbuf, GFP_KERNEL);
 		WARN_ON(err);	/* sanity check; this can't really happen */
@@ -2000,6 +2013,12 @@ static int __init tipc_init(void)
 	int ret;
 	dev_t dev;
 
+#if test_dyn_rkp
+	pa_tipc_chan_queue_msg = (uint64_t) tipc_chan_queue_msg;
+	pa_tipc_create_channel = (uint64_t) tipc_create_channel;
+	pa_tipc_k_connect = (uint64_t) tipc_k_connect;
+	pa_tipc_k_write = (uint64_t) tipc_k_write;
+#endif
 
 	ret = alloc_chrdev_region(&dev, 0, MAX_DEVICES, KBUILD_MODNAME);
 	if (ret) {

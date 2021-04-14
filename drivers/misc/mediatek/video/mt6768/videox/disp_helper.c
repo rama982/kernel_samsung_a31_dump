@@ -145,6 +145,7 @@ static struct {
 	{DISP_OPT_OVL_SBCH, 0, "DISP_OPT_OVL_SBCH"},
 	{DISP_OPT_GMO_OPTIMIZE, 0, "DISP_OPT_GMO_OPTIMIZE"},
 	{DISP_OPT_TUI_MODE, 0, "DISP_OPT_TUI_MODE"},
+	{DISP_OPT_LCM_HBM, 0, "DISP_OPT_LCM_HBM"},
 };
 
 const char *disp_helper_option_spy(enum DISP_HELPER_OPT option)
@@ -414,18 +415,21 @@ void disp_helper_option_init(void)
 	disp_helper_set_option(DISP_OPT_ARR_PHASE_1, 0);
 	/* HW does not support this */
 	disp_helper_set_option(DISP_OPT_RSZ, 0);
-	disp_helper_set_option(DISP_OPT_RPO, 1);
+	disp_helper_set_option(DISP_OPT_RPO, 0);
 	disp_helper_set_option(DISP_OPT_DUAL_PIPE, 0);
 	disp_helper_set_option(DISP_OPT_SHARE_WDMA0, 1);
 	disp_helper_set_option(DISP_OPT_FRAME_QUEUE, 0);
 	disp_helper_set_option(DISP_OPT_ROUND_CORNER, 1);
 
 	/* OVL SBCH */
-	disp_helper_set_option(DISP_OPT_OVL_SBCH, 1);
+	disp_helper_set_option(DISP_OPT_OVL_SBCH, 0);
 	disp_helper_set_option(DISP_OPT_GMO_OPTIMIZE, 1);
 	disp_helper_set_option(DISP_OPT_DSI_UNDERRUN_AEE, 1);
 	disp_helper_set_option(DISP_OPT_RDMA_UNDERFLOW_AEE, 1);
 	disp_helper_set_option(DISP_OPT_TUI_MODE, 0);
+
+	/* HBM: High Backlight Mode */
+	disp_helper_set_option(DISP_OPT_LCM_HBM, 1);
 }
 
 int disp_helper_get_option_list(char *stringbuf, int buf_len)

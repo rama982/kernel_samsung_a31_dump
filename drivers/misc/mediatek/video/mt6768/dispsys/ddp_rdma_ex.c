@@ -653,12 +653,19 @@ void rdma_set_ultra_l(unsigned int idx, unsigned int bpp, void *handle,
 		fifo_off_drs_leave = 1;
 		fifo_off_spm = 50; /* 10 times*/
 		fifo_off_dvfs = 2;
-		if (is_wrot_sram)
-			fifo_off_ultra = 50;
-		else if (is_rsz_sram)
-			fifo_off_ultra = 10;
-		else
+		if (is_wrot_sram) {
+			if (rdma_golden_setting->dst_height > 2340)
+				fifo_off_ultra = 535; /* 10 times */
+			else
+				fifo_off_ultra = 500; /* 10 times */
+		} else if (is_rsz_sram) {
+			if (rdma_golden_setting->dst_height > 2340)
+				fifo_off_ultra = 190; /* 10 times */
+			else
+				fifo_off_ultra = 100; /* 10 times */
+		} else {
 			fifo_off_ultra = 0;
+		}
 		consume_rate = rdma_golden_setting->dst_width;
 		consume_rate = consume_rate * rdma_golden_setting->dst_height
 				*frame_rate * Bytes_per_sec;
@@ -683,24 +690,38 @@ void rdma_set_ultra_l(unsigned int idx, unsigned int bpp, void *handle,
 	do_div(consume_rate_div_tmp, 100);
 	consume_rate_div = DIV_ROUND_UP((unsigned int)consume_rate_div_tmp, 10);
 
-	preultra_low = (preultra_low_us + fifo_off_ultra) * consume_rate_div;
+	preultra_low = (preultra_low_us * 10 + fifo_off_ultra)
+		* consume_rate_div;
+	preultra_low = DIV_ROUND_UP(preultra_low, 10);
 
-	preultra_high = (preultra_high_us + fifo_off_ultra) * consume_rate_div;
+	preultra_high = (preultra_high_us * 10 + fifo_off_ultra)
+		* consume_rate_div;
+	preultra_high = DIV_ROUND_UP(preultra_high, 10);
 
-	ultra_low = (ultra_low_us + fifo_off_ultra) * consume_rate_div;
+	ultra_low = (ultra_low_us * 10 + fifo_off_ultra) * consume_rate_div;
+	ultra_low = DIV_ROUND_UP(ultra_low, 10);
 
-	ultra_high = preultra_low;
 	if (idx == 0) {
 		/* only rdma0 can share sram */
-		if (is_wrot_sram)
+		if (is_wrot_sram) {
 			fifo_valid_size = 2048;
-		else if (is_rsz_sram)
+			preultra_low = preultra_low - (10 * consume_rate_div);
+			preultra_high = preultra_high - (10 * consume_rate_div);
+			ultra_low = ultra_low - (10 * consume_rate_div);
+		} else if (is_rsz_sram) {
 			fifo_valid_size = 736;
-		else
+			preultra_low = preultra_low - (10 * consume_rate_div);
+			preultra_high = preultra_high - (10 * consume_rate_div);
+			ultra_low = ultra_low - (10 * consume_rate_div);
+
+		} else {
 			fifo_valid_size = 384;
+		}
 	} else {
 		fifo_valid_size = 128;
 	}
+	ultra_high = preultra_low;
+
 	issue_req_threshold =
 		(fifo_valid_size - preultra_low) < 255
 				? (fifo_valid_size - preultra_low) : 255;
@@ -817,14 +838,29 @@ void rdma_set_ultra_l(unsigned int idx, unsigned int bpp, void *handle,
 		REG_FLD_VAL(DRAM_CON_FLD_BANK_BOUNDARY_SEL, 1));
 
 	/*DISP_RDMA_DVFS_SETTING_PREULTRA*/
-	dvfs_preultra_low = (preultra_low_us + fifo_off_ultra + fifo_off_dvfs)
-						* consume_rate_div;
+	dvfs_preultra_low = (preultra_low_us * 10 + fifo_off_ultra
+		+ fifo_off_dvfs * 10) * consume_rate_div;
+	dvfs_preultra_low = DIV_ROUND_UP(dvfs_preultra_low, 10);
 
-	dvfs_preultra_high = (preultra_high_us + fifo_off_ultra + fifo_off_dvfs)
-						* consume_rate_div;
+	dvfs_preultra_high = (preultra_high_us * 10 + fifo_off_ultra
+		+ fifo_off_dvfs * 10) * consume_rate_div;
+	dvfs_preultra_high = DIV_ROUND_UP(dvfs_preultra_high, 10);
 
-	dvfs_ultra_low = (ultra_low_us + fifo_off_ultra + fifo_off_dvfs)
-						* consume_rate_div;
+	dvfs_ultra_low = (ultra_low_us * 10 + fifo_off_ultra
+		+ fifo_off_dvfs * 10) * consume_rate_div;
+	dvfs_ultra_low = DIV_ROUND_UP(dvfs_ultra_low, 10);
+
+	if (idx == 0) {
+		/* only rdma0 can share sram */
+		if (is_wrot_sram || is_rsz_sram) {
+			dvfs_preultra_low = dvfs_preultra_low
+				- (10 * consume_rate_div);
+			dvfs_preultra_high = dvfs_preultra_high
+				- (10 * consume_rate_div);
+			dvfs_ultra_low = dvfs_ultra_low
+				- (10 * consume_rate_div);
+		}
+	}
 
 	dvfs_ultra_high = dvfs_preultra_low;
 	DISP_REG_SET(handle, idx * DISP_RDMA_INDEX_OFFSET +
@@ -1399,6 +1435,53 @@ int rdma_switch_to_nonsec(enum DISP_MODULE_ENUM module,
 	return 0;
 }
 
+int rdma_wait_sec_done(enum DISP_MODULE_ENUM module,
+	struct disp_ddp_path_config *pConfig, void *handle)
+{
+	unsigned int rdma_idx = rdma_index(module);
+	enum CMDQ_ENG_ENUM cmdq_engine;
+	struct cmdqRecStruct *wait_handle;
+	int ret;
+
+	if (rdma_is_sec[rdma_idx] == 0)
+		return 0;
+
+	cmdq_engine = rdma_to_cmdq_engine(module);
+	/* rdma is in sec stat, we need to switch it to nonsec */
+
+	ret = cmdqRecCreate(CMDQ_SCENARIO_PRIMARY_DISP,
+			&(wait_handle));
+	if (ret)
+		DDPAEE("[SVP]fail to create disable handle %s ret=%d\n",
+			__func__, ret);
+
+	cmdqRecReset(wait_handle);
+
+	cmdqRecSetSecure(wait_handle, 1);
+
+	cmdqRecSecureEnablePortSecurity(wait_handle,
+		(1LL << cmdq_engine));
+
+	if (handle != NULL) {
+		/*Async Flush method*/
+		enum CMDQ_EVENT_ENUM cmdq_event_nonsec_end;
+
+		cmdq_event_nonsec_end = rdma_to_cmdq_event_nonsec_end(module);
+		cmdqRecSetEventToken(wait_handle, cmdq_event_nonsec_end);
+		cmdqRecFlushAsync(wait_handle);
+		cmdqRecWait(handle, cmdq_event_nonsec_end);
+	} else {
+		/*Sync Flush method*/
+		cmdqRecFlush(wait_handle);
+	}
+
+	cmdqRecDestroy(wait_handle);
+
+	MMProfileLogEx(ddp_mmp_get_events()->svp_module[module],
+		MMProfileFlagPulse, 1, 1);
+	return 0;
+}
+
 static int setup_rdma_sec(enum DISP_MODULE_ENUM module,
 	struct disp_ddp_path_config *pConfig, void *handle)
 {
@@ -1426,6 +1509,8 @@ static int setup_rdma_sec(enum DISP_MODULE_ENUM module,
 		if (ret)
 			DDPAEE("[SVP]fail to setup_ovl_sec: %s ret=%d\n",
 				__func__, ret);
+	} else {
+		rdma_wait_sec_done(module, pConfig, NULL);
 	}
 
 	return is_engine_sec;

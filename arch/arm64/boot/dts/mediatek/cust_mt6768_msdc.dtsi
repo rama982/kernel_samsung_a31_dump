@@ -24,6 +24,7 @@
 	no-sd;
 	no-sdio;
 	non-removable;
+	emmc_power_ao;
 	pinctl = <&msdc0_pins_default>;
 	pinctl_hs400 = <&msdc0_pins_hs400>;
 	pinctl_hs200 = <&msdc0_pins_hs200>;

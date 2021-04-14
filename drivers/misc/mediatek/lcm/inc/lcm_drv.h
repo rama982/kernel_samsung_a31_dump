@@ -17,6 +17,10 @@
 #include <linux/device.h>
 #include <linux/platform_device.h>
 #include <linux/regulator/consumer.h>
+#if defined(CONFIG_SMCDSD_PANEL)
+#include "smcdsd_notify.h"
+#include "smcdsd_abd.h"
+#endif
 
 #ifndef ARY_SIZE
 #define ARY_SIZE(x) (sizeof((x)) / sizeof((x[0])))
@@ -718,6 +722,10 @@ struct LCM_PARAMS {
 	unsigned int min_luminance;
 	unsigned int average_luminance;
 	unsigned int max_luminance;
+
+	/* HBM: High Backlight Mode */
+	unsigned int hbm_enable_wait_frame;
+	unsigned int hbm_disable_wait_frame;
 };
 
 
@@ -865,6 +873,9 @@ struct LCM_UTIL_FUNCS {
 	unsigned int (*dsi_dcs_read_lcm_reg)(unsigned char cmd);
 	unsigned int (*dsi_dcs_read_lcm_reg_v2)(unsigned char cmd,
 		unsigned char *buffer, unsigned char buffer_size);
+	unsigned int (*dsi_dcs_read_cmdq_lcm_reg_v2_1)(void *cmdq,
+		unsigned char data_id, unsigned char offset, unsigned char cmd,
+		unsigned char *buffer, unsigned char buffer_size);
 	void (*wait_transfer_done)(void);
 
 	/*   FIXME: GPIO mode should not be configured in lcm driver*/
@@ -873,6 +884,12 @@ struct LCM_UTIL_FUNCS {
 	int (*set_gpio_dir)(unsigned int pin, unsigned int dir);
 	int (*set_gpio_pull_enable)(unsigned int pin, unsigned char pull_en);
 	long (*set_gpio_lcd_enp_bias)(unsigned int value);
+	long (*set_gpio_lcd_vpp_1p8)(unsigned int value);
+	long (*set_gpio_lcd_vsp_5p5)(unsigned int value);
+	long (*set_gpio_lcd_vsn_5p5)(unsigned int value);
+	long (*set_gpio_lcd_rst_enp)(unsigned int value);
+	long (*set_gpio_blic_en_enp)(unsigned int value);
+	long (*set_gpio_tsp_rst)(unsigned int value);
 	void (*dsi_set_cmdq_V11)(void *cmdq, unsigned int *pdata,
 			unsigned int queue_size, unsigned char force_update);
 	void (*dsi_set_cmdq_V22)(void *cmdq, unsigned int cmd,
@@ -894,8 +911,20 @@ struct LCM_DRIVER {
 	const char *name;
 	void (*set_util_funcs)(const struct LCM_UTIL_FUNCS *util);
 	void (*get_params)(struct LCM_PARAMS *params);
+	void (*dsi_set_withrawcmdq)(void *cmdq, unsigned int *pdata,
+		unsigned int queue_size, unsigned char force_update);
+	void (*dsi_set_withcmdq)(void *cmdq, unsigned int cmd,
+		unsigned char count, unsigned char *para_list,
+		unsigned char force_update);
+	int (*read_by_cmdq)(void *cmdq, unsigned int data_id,
+		unsigned int offset, unsigned int cmd, unsigned char *buffer,
+		unsigned char size);
 
 	void (*init)(void);
+#if defined(CONFIG_LCD_GENERIC)
+	/*Add panel start check at frist booting*/
+	void (*reduced_init)(int is_init);
+#endif
 	void (*suspend)(void);
 	void (*resume)(void);
 
@@ -913,10 +942,17 @@ struct LCM_DRIVER {
 	/* /////////////////////////CABC backlight related function */
 	void (*set_backlight)(unsigned int level);
 	void (*set_backlight_cmdq)(void *handle, unsigned int level);
+	bool (*get_hbm_state)(void);
+	bool (*get_hbm_wait)(void);
+	bool (*set_hbm_wait)(bool wait);
+	bool (*set_hbm_cmdq)(bool en, void *qhandle);
+	bool (*framedone_notify)(void);
+	bool (*lcm_path_lock)(bool en);
 	void (*set_pwm)(unsigned int divider);
 	unsigned int (*get_pwm)(unsigned int divider);
 	void (*set_backlight_mode)(unsigned int mode);
 	/* ///////////////////////// */
+	int (*set_display_on)(void);
 
 	int (*adjust_fps)(void *cmdq, int fps, struct LCM_PARAMS *params);
 	void (*validate_roi)(int *x, int *y, int *width, int *height);
@@ -944,6 +980,10 @@ struct LCM_DRIVER {
 	/* /////////////PWM///////////////////////////// */
 	void (*set_pwm_for_mix)(int enable);
 
+#if defined(CONFIG_SMCDSD_PANEL)
+	void (*cmd_q)(unsigned int enable);
+#endif
+
 	void (*aod)(int enter);
 };
 
@@ -955,6 +995,11 @@ unsigned char which_lcd_module_triple(void);
 int lcm_vgp_supply_enable(void);
 int lcm_vgp_supply_disable(void);
 extern enum LCM_DSI_MODE_CON lcm_dsi_mode;
+
+extern void primary_display_idlemgr_kick(const char *source, int need_lock);
+extern int primary_display_dsi_set_withcmdq(unsigned int cmd,
+	unsigned char count, unsigned char *para_list,
+	unsigned char force_update);
 
 extern int display_bias_enable(void);
 extern int display_bias_disable(void);

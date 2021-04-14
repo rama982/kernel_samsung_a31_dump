@@ -37,6 +37,7 @@
 #endif
 
 
+extern int imgsensor_sysfs_update(unsigned char* pEepromData, unsigned int deviceId, unsigned int sensorId, unsigned int offset, unsigned int length, int i4RetValue);
 
 #define CAM_CAL_DRV_NAME "CAM_CAL_DRV"
 #define CAM_CAL_DEV_MAJOR_NUMBER 226
@@ -701,6 +702,8 @@ static long EEPROM_drv_ioctl(struct file *file,
 				return -EFAULT;
 			}
 		}
+		//FIXME : HEECHUL, temp code to make EEPROM read at boot
+		imgsensor_sysfs_update(pu1Params, ptempbuf->deviceID, ptempbuf->sensorID, ptempbuf->u4Offset, ptempbuf->u4Length, i4RetValue);
 #ifdef CAM_CALGETDLT_DEBUG
 		do_gettimeofday(&ktv2);
 		if (ktv2.tv_sec > ktv1.tv_sec)

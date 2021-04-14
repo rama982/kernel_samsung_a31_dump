@@ -204,9 +204,10 @@ static int mmc_queue_thread(void *d)
 #endif
 	bool part_cmdq_en = false;
 
-	scheduler_params.sched_priority = 1;
-
-	sched_setscheduler(current, SCHED_FIFO, &scheduler_params);
+	if (mq->card->type != MMC_TYPE_SD) {
+		scheduler_params.sched_priority = 1;
+		sched_setscheduler(current, SCHED_FIFO, &scheduler_params);
+	}
 
 	current->flags |= PF_MEMALLOC;
 
@@ -733,7 +734,7 @@ int mmc_cmdq_init(struct mmc_queue *mq, struct mmc_card *card)
 	init_completion(&mq->cmdq_pending_req_done);
 
 	blk_queue_rq_timed_out(mq->queue, mmc_cmdq_rq_timed_out);
-	blk_queue_rq_timeout(mq->queue, 120 * HZ);
+	blk_queue_rq_timeout(mq->queue, 10 * HZ);
 	card->cqe_init = true;
 
 	goto out;
@@ -828,8 +829,40 @@ int mmc_queue_suspend(struct mmc_queue *mq, int wait)
 		blk_stop_queue(q);
 		spin_unlock_irqrestore(q->queue_lock, flags);
 
-		down(&mq->thread_sem);
-		rc = 0;
+		rc = down_trylock(&mq->thread_sem);
+		if (rc && !wait) {
+			/*
+			 * Failed to take the lock so better to abort the
+			 * suspend because mmcqd thread is processing requests.
+			 */
+			clear_bit(MMC_QUEUE_SUSPENDED, &mq->flags);
+			spin_lock_irqsave(q->queue_lock, flags);
+			blk_start_queue(q);
+			spin_unlock_irqrestore(q->queue_lock, flags);
+			rc = -EBUSY;
+		} else if (wait) {
+			printk("%s: mq->flags: %ld, q->queue_flags: 0x%lx, \
+					q->in_flight (%d, %d)\n",
+					mmc_hostname(mq->card->host), mq->flags,
+					q->queue_flags, q->in_flight[0], q->in_flight[1]);
+			mutex_lock(&q->sysfs_lock);
+
+			queue_flag_set_unlocked(QUEUE_FLAG_DYING, q);
+			spin_lock_irqsave(q->queue_lock, flags);
+			queue_flag_set(QUEUE_FLAG_DYING, q);
+
+			while ((req = blk_fetch_request(q)) != NULL) {
+				req->rq_flags |= RQF_QUIET;
+				__blk_end_request_all(req, BLK_STS_IOERR);
+			}
+
+			spin_unlock_irqrestore(q->queue_lock, flags);
+			mutex_unlock(&q->sysfs_lock);
+			if (rc) {
+				down(&mq->thread_sem);
+				rc = 0;
+			}
+		}
 	}
 out:
 	return rc;

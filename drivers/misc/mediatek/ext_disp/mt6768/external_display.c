@@ -948,13 +948,7 @@ static int ext_disp_init_hdmi(unsigned int session)
 
 	EXTDINFO("ext_disp display START cmdq trigger loop finished\n");
 
-
-	if (ext_disp_is_video_mode() != -1)
-		dpmgr_path_set_video_mode(pgc->dpmgr_handle,
-			ext_disp_is_video_mode());
-	else
-		return -1;
-
+	dpmgr_path_set_video_mode(pgc->dpmgr_handle, ext_disp_is_video_mode());
 	dpmgr_path_init(pgc->dpmgr_handle, CMDQ_DISABLE);
 	dpmgr_path_reset(pgc->dpmgr_handle, CMDQ_DISABLE);
 

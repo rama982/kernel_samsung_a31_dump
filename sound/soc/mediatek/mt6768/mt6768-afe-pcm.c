@@ -849,10 +849,11 @@ static int mt6768_sram_size_get(struct snd_kcontrol *kcontrol,
 {
 	struct snd_soc_component *cmpnt = snd_soc_kcontrol_component(kcontrol);
 	struct mtk_base_afe *afe = snd_soc_component_get_drvdata(cmpnt);
-	struct mtk_audio_sram *sram = afe->sram;
 
 	ucontrol->value.integer.value[0] =
-		mtk_audio_sram_get_size(sram, sram->prefer_mode);
+		mtk_audio_sram_get_size(afe->sram, MTK_AUDIO_SRAM_NORMAL_MODE);
+	ucontrol->value.integer.value[1] =
+		mtk_audio_sram_get_size(afe->sram, MTK_AUDIO_SRAM_COMPACT_MODE);
 
 	return 0;
 }
@@ -1211,7 +1212,7 @@ static const struct snd_kcontrol_new mt6768_pcm_kcontrols[] = {
 		       mt6768_primary_scene_get, mt6768_primary_scene_set),
 	SOC_SINGLE_EXT("voip_rx_scenario", SND_SOC_NOPM, 0, 0x1, 0,
 		       mt6768_voip_scene_get, mt6768_voip_scene_set),
-	SOC_SINGLE_EXT("sram_size", SND_SOC_NOPM, 0, 0xffffffff, 0,
+	SOC_DOUBLE_EXT("sram_size", SND_SOC_NOPM, 0, 1, 0xffffffff, 0,
 		       mt6768_sram_size_get, NULL),
 #if defined(CONFIG_MTK_VOW_BARGE_IN_SUPPORT)
 	SOC_SINGLE_EXT("vow_barge_in_irq_id", SND_SOC_NOPM, 0, 0x3ffff, 0,
@@ -1337,6 +1338,8 @@ static const struct snd_kcontrol_new memif_ul2_ch2_mix[] = {
 static const struct snd_kcontrol_new memif_ul3_ch1_mix[] = {
 	SOC_DAPM_SINGLE_AUTODISABLE("CONNSYS_I2S_CH1", AFE_CONN32_1,
 				    I_CONNSYS_I2S_CH1, 1, 0),
+	SOC_DAPM_SINGLE_AUTODISABLE("GAIN2_OUT_CH1", AFE_CONN32,
+				    I_GAIN2_OUT_CH1, 1, 0),
 	SOC_DAPM_SINGLE_AUTODISABLE("DL1_CH1", AFE_CONN32,
 				    I_DL1_CH1, 1, 0),
 	SOC_DAPM_SINGLE_AUTODISABLE("DL2_CH1", AFE_CONN32,
@@ -1346,6 +1349,8 @@ static const struct snd_kcontrol_new memif_ul3_ch1_mix[] = {
 static const struct snd_kcontrol_new memif_ul3_ch2_mix[] = {
 	SOC_DAPM_SINGLE_AUTODISABLE("CONNSYS_I2S_CH2", AFE_CONN33_1,
 				    I_CONNSYS_I2S_CH2, 1, 0),
+	SOC_DAPM_SINGLE_AUTODISABLE("GAIN2_OUT_CH2", AFE_CONN33,
+				    I_GAIN2_OUT_CH2, 1, 0),
 };
 
 static const struct snd_kcontrol_new memif_ul4_ch1_mix[] = {
@@ -1488,6 +1493,9 @@ static const struct snd_soc_dapm_route mt6768_memif_routes[] = {
 	{"UL3_CH1", "CONNSYS_I2S_CH1", "Connsys I2S"},
 	{"UL3_CH2", "CONNSYS_I2S_CH2", "Connsys I2S"},
 
+	/* hw gain to UL3 */
+	{"UL3_CH1", "GAIN2_OUT_CH1", "HW Gain 2 Out"},
+	{"UL3_CH2", "GAIN2_OUT_CH2", "HW Gain 2 Out"},
 	{"Hostless_UL4 UL", NULL, "UL4_VIRTUAL_INPUT"},
 
 	{"UL4_CH1", "DL1_CH1", "Hostless_UL4 UL"},
@@ -2156,10 +2164,6 @@ static int mt6768_afe_runtime_suspend(struct device *dev)
 
 	/* reset sgen */
 	regmap_write(afe->regmap, AFE_SINEGEN_CON0, 0x0);
-	regmap_update_bits(afe->regmap, AFE_SINEGEN_CON2,
-			   INNER_LOOP_BACK_MODE_MASK_SFT,
-			   0x3f << INNER_LOOP_BACK_MODE_SFT);
-
 	/* cache only */
 	regcache_cache_only(afe->regmap, true);
 	regcache_mark_dirty(afe->regmap);

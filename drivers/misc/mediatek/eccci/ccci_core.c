@@ -269,8 +269,11 @@ int exec_ccci_kern_func_by_md_id(int md_id, unsigned int id, char *buf,
 				MD_SW_MD2_TX_POWER;
 			unsigned int mode = *((unsigned int *)buf);
 
+			/*send tx power status for swtp and carkit*/
 			ret = ccci_port_send_msg_to_md(md_id, CCCI_SYSTEM_TX,
 				msg_id, mode, 0);
+			ret = ccci_port_send_msg_to_md(md_id, CCCI_SYSTEM_TX,
+				MD_CARKIT_STATUS, mode, 0);
 		}
 		break;
 	case ID_DUMP_MD_SLEEP_MODE:

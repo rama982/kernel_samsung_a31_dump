@@ -2647,7 +2647,7 @@ err:
 	return retval;
 }
 
-#ifdef CONFIG_USB_G_ANDROID
+#if 0//def CONFIG_USB_G_ANDROID
 static void stop_activity(struct musb *musb)
 {
 	int i;
@@ -2719,7 +2719,7 @@ static int musb_gadget_stop(struct usb_gadget *g)
 	}
 
 	musb->xceiv->otg->state = OTG_STATE_UNDEFINED;
-#ifdef CONFIG_USB_G_ANDROID
+#if 0//def CONFIG_USB_G_ANDROID
 	stop_activity(musb);
 #endif
 	otg_set_peripheral(musb->xceiv->otg, NULL);

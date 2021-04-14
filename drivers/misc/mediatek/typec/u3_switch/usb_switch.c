@@ -395,7 +395,7 @@ static int usb_cc_smt_status(void *data, u64 *val)
 	return 0;
 }
 #else
-static int usb_check_cc_smt_status(void *data, u64 *val)
+static int usb_cc_smt_status(void *data, u64 *val)
 {
 	return 0;
 }

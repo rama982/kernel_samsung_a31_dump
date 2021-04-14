@@ -184,8 +184,13 @@ typedef void (*pm_callback_t)(pm_message_t state, void *data);
 #define MSDC_REMOVABLE      (1 << 5)  /* removable slot                */
 #define MSDC_SDIO_DDR208    (1 << 7)  /* ddr208 mode used by 6632      */
 #define MSDC_VMCH_FASTOFF   (1 << 8)  /* vmch fastoff when plug ot card      */
+#define MSDC_EMMC_PWR_AO    (1 << 14)   /* emmc power always on at sleep */
 /* for some board, need SD power always on!! or cannot recognize the sd card*/
 #define MSDC_SD_NEED_POWER  (1 << 31)
+
+#define msdc_set_emmc_pwr_ao(h) ((h)->hw->flags |= MSDC_EMMC_PWR_AO)
+#define msdc_clr_emmc_pwr_ao(h) ((h)->hw->flags &= ~MSDC_EMMC_PWR_AO)
+#define msdc_emmc_pwr_ao(h)     ((h)->hw->flags & MSDC_EMMC_PWR_AO)
 
 #define MSDC_BOOT_EN        (1)
 

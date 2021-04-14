@@ -410,7 +410,6 @@ static void mtk_vdec_pic_info_update(struct mtk_vcodec_ctx *ctx)
 {
 	unsigned int dpbsize = 0;
 	int ret;
-	struct mtk_color_desc color_desc;
 
 	if (vdec_if_get_param(ctx,
 						  GET_PARAM_PIC_INFO,
@@ -433,13 +432,8 @@ static void mtk_vdec_pic_info_update(struct mtk_vcodec_ctx *ctx)
 		mtk_v4l2_err("Incorrect dpb size, ret=%d", ret);
 	ctx->last_dpb_size = dpbsize;
 
-	ret = vdec_if_get_param(ctx, GET_PARAM_COLOR_DESC, &color_desc);
-	if (ret == 0) {
-		ctx->last_is_hdr = color_desc.is_hdr;
-	}
-
 	mtk_v4l2_debug(1,
-				   "[%d]-> new(%d,%d),dpb(%d), old(%d,%d),dpb(%d), bit(%d) real(%d,%d) hdr(%d,%d)",
+				   "[%d]-> new(%d,%d),dpb(%d), old(%d,%d),dpb(%d), bit(%d) real(%d,%d)",
 				   ctx->id, ctx->last_decoded_picinfo.pic_w,
 				   ctx->last_decoded_picinfo.pic_h,
 				   ctx->last_dpb_size,
@@ -447,8 +441,7 @@ static void mtk_vdec_pic_info_update(struct mtk_vcodec_ctx *ctx)
 				   ctx->dpb_size,
 				   ctx->picinfo.bitdepth,
 				   ctx->last_decoded_picinfo.buf_w,
-				   ctx->last_decoded_picinfo.buf_h,
-				   ctx->is_hdr, ctx->last_is_hdr);
+				   ctx->last_decoded_picinfo.buf_h);
 }
 
 
@@ -539,7 +532,6 @@ static void mtk_vdec_worker(struct work_struct *work)
 	unsigned int fourcc = ctx->q_data[MTK_Q_DATA_SRC].fmt->fourcc;
 	unsigned int dpbsize = 0;
 	struct timeval timestamp;
-	struct mtk_color_desc color_desc;
 
 	mutex_lock(&ctx->worker_lock);
 	if (ctx->state != MTK_STATE_HEADER) {
@@ -779,14 +771,6 @@ static void mtk_vdec_worker(struct work_struct *work)
 			mtk_v4l2_err("[%d] GET_PARAM_DPB_SIZE fail=%d",
 				 ctx->id, ret);
 		}
-		ret = vdec_if_get_param(ctx, GET_PARAM_COLOR_DESC, &color_desc);
-		if (ret == 0) {
-			ctx->is_hdr = color_desc.is_hdr;
-			ctx->last_is_hdr = color_desc.is_hdr;
-		} else {
-			mtk_v4l2_err("[%d] GET_PARAM_COLOR_DESC fail=%d",
-				 ctx->id, ret);
-		}
 	}
 
 	v4l2_m2m_job_finish(dev->m2m_dev_dec, ctx->m2m_ctx);
@@ -881,6 +865,38 @@ void mtk_vdec_lock(struct mtk_vcodec_ctx *ctx, u32 hw_id)
 	mtk_v4l2_debug(4, "ctx %p [%d] hw_id %d", ctx, ctx->id, hw_id);
 	while (hw_id < MTK_VDEC_HW_NUM && ret != 0)
 		ret = down_interruptible(&ctx->dev->dec_sem[hw_id]);
+}
+
+void mtk_vdec_hw_break(struct mtk_vcodec_ctx *ctx)
+{
+	u32 cg_status = 0;
+	void __iomem *vdec_misc_addr = ctx->dev->dec_reg_base[VDEC_MISC];
+	void __iomem *vdec_vld_addr = ctx->dev->dec_reg_base[VDEC_VLD];
+	struct timeval tv_start;
+	struct timeval tv_end;
+	u32 usec;
+
+	/* hw break */
+	writel((readl(vdec_misc_addr + 0x0100) | 0x1),
+		   vdec_misc_addr + 0x0100);
+
+	do_gettimeofday(&tv_start);
+	cg_status = readl(vdec_misc_addr + 0x0104);
+	while (!((cg_status & 0x1) && (cg_status & 0x10))) {
+		do_gettimeofday(&tv_end);
+		usec = (tv_end.tv_sec - tv_start.tv_sec) * 1000000 +
+		       (tv_end.tv_usec - tv_start.tv_usec);
+		if (usec > 20000) {
+			mtk_v4l2_err("VDEC HW break timeout");
+			break;
+		}
+		cg_status = readl(vdec_misc_addr + 0x0104);
+	}
+
+	mtk_v4l2_err("[info] break HW successfully and sw reset\n");
+	/* sw reset */
+	writel(0x1, vdec_vld_addr + 0x0108);
+	writel(0x0, vdec_vld_addr + 0x0108);
 }
 
 void mtk_vcodec_dec_empty_queues(struct file *file, struct mtk_vcodec_ctx *ctx)
@@ -1920,7 +1936,6 @@ static void vb2ops_vdec_buf_queue(struct vb2_buffer *vb)
 	struct mtk_q_data *dst_q_data;
 	u32 fourcc;
 	int last_frame_type = 0;
-	struct mtk_color_desc color_desc;
 
 	mtk_v4l2_debug(4, "[%d] (%d) id=%d, vb=%p",
 				   ctx->id, vb->vb2_queue->type,
@@ -2095,16 +2110,6 @@ static void vb2ops_vdec_buf_queue(struct vb2_buffer *vb)
 
 	ctx->dpb_size = dpbsize;
 	ctx->last_dpb_size = dpbsize;
-
-	ret = vdec_if_get_param(ctx, GET_PARAM_COLOR_DESC, &color_desc);
-	if (ret == 0) {
-		ctx->is_hdr = color_desc.is_hdr;
-		ctx->last_is_hdr = color_desc.is_hdr;
-	} else {
-		mtk_v4l2_err("[%d] GET_PARAM_COLOR_DESC fail=%d",
-		ctx->id, ret);
-	}
-
 	ctx->state = MTK_STATE_HEADER;
 	mtk_v4l2_debug(1, "[%d] dpbsize=%d", ctx->id, ctx->dpb_size);
 
@@ -2249,7 +2254,6 @@ static void vb2ops_vdec_stop_streaming(struct vb2_queue *q)
 		 */
 		ctx->picinfo = ctx->last_decoded_picinfo;
 		ctx->dpb_size = ctx->last_dpb_size;
-		ctx->is_hdr = ctx->last_is_hdr;
 
 		mtk_v4l2_debug(2,
 			"[%d]-> new(%d,%d), old(%d,%d), real(%d,%d) bit:%d\n",
@@ -2292,8 +2296,7 @@ static int m2mops_vdec_job_ready(void *m2m_priv)
 
 	if ((ctx->last_decoded_picinfo.pic_w != ctx->picinfo.pic_w) ||
 		(ctx->last_decoded_picinfo.pic_h != ctx->picinfo.pic_h) ||
-		(ctx->last_dpb_size != ctx->dpb_size) ||
-		(ctx->last_is_hdr != ctx->is_hdr))
+		(ctx->last_dpb_size != ctx->dpb_size))
 		return 0;
 
 	if (ctx->state != MTK_STATE_HEADER)
