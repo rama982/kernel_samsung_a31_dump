@@ -1194,7 +1194,8 @@ int rndis_rm_hdr(struct gether *port,
 
 		skb_pull(skb, data_offset + 8);
 
-		if (msg_len == skb->len) {
+		if (data_len == skb->len ||
+				data_len == (skb->len - 1)) {
 			skb_trim(skb, data_len);
 			break;
 		}

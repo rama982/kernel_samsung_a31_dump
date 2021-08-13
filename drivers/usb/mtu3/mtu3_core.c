@@ -23,11 +23,58 @@
 #include <linux/of_irq.h>
 #include <linux/platform_device.h>
 #include <linux/dma-mapping.h>
+#include <linux/usb_notify.h>
 
 #include "mtu3.h"
 #include "mtu3_dr.h"
 #ifdef CONFIG_USB_MTU3_PLAT_PHONE
 static u32 sts_ltssm;
+#endif
+
+#if defined(CONFIG_BATTERY_SAMSUNG)
+static int mtu3_set_vbus_current(int state)
+{
+	struct power_supply *psy;
+	union power_supply_propval pval = {0};
+
+	pr_info("%s : %dmA\n", __func__, state);
+	psy = power_supply_get_by_name("battery");
+	if (psy) {
+		pval.intval = state;
+		psy_do_property("battery", set,
+			POWER_SUPPLY_EXT_PROP_USB_CONFIGURE, pval);
+		power_supply_put(psy);
+	}
+
+	return 0;
+}
+
+static void musb_set_vbus_current_work(struct work_struct *w)
+{
+	struct mtu3 *mtu = container_of(w,
+		struct mtu3, set_vbus_current_work);
+	struct otg_notify *o_notify = get_otg_notify();
+
+	switch (mtu->vbus_current) {
+	case USB_CURRENT_SUSPENDED:
+		/* set vbus current for suspend state is called in usb_notify. */
+		send_otg_notify(o_notify, NOTIFY_EVENT_USBD_SUSPENDED, 1);
+		goto skip;
+	case USB_CURRENT_UNCONFIGURED:
+		send_otg_notify(o_notify, NOTIFY_EVENT_USBD_UNCONFIGURED, 1);
+		break;
+	case USB_CURRENT_HIGH_SPEED:
+	case USB_CURRENT_SUPER_SPEED:
+		send_otg_notify(o_notify, NOTIFY_EVENT_USBD_CONFIGURED, 1);
+		break;
+	default:
+		break;
+	}
+
+	mtu3_set_vbus_current(mtu->vbus_current);
+skip:
+	return;
+}
 #endif
 
 static int ep_fifo_alloc(struct mtu3_ep *mep, u32 seg_size)
@@ -235,9 +282,11 @@ void mtu3_ep_stall_set(struct mtu3_ep *mep, bool set)
 	}
 
 	if (!set) {
+		mtu3_qmu_stop(mep);
 		mtu3_setbits(mbase, U3D_EP_RST, EP_RST(mep->is_in, epnum));
 		mtu3_clrbits(mbase, U3D_EP_RST, EP_RST(mep->is_in, epnum));
 		mep->flags &= ~MTU3_EP_STALL;
+		mtu3_qmu_resume(mep);
 	} else {
 		mep->flags |= MTU3_EP_STALL;
 	}
@@ -541,6 +590,9 @@ static void mtu3_regs_init(struct mtu3 *mtu)
 	mtu3_intr_disable(mtu);
 	mtu3_intr_status_clear(mtu);
 
+	/* Hardware remote wakeup from L1 automatically based on the FIFO status */
+	mtu3_setbits(mbase, U3D_POWER_MANAGEMENT, LPM_HRWE);
+
 	if (mtu->is_u3_ip) {
 		/* disable LGO_U1/U2 by default */
 		mtu3_clrbits(mbase, U3D_LINK_POWER_CONTROL,
@@ -567,6 +619,8 @@ static void mtu3_regs_init(struct mtu3 *mtu)
 		mtu3_setbits(mbase, U3D_MISC_CTRL, VBUS_FRC_EN | VBUS_ON);
 	else
 		mtu3_clrbits(mbase, U3D_MISC_CTRL, VBUS_FRC_EN | VBUS_ON);
+
+	mtu3_setbits(mbase, U3D_USB2_TEST_MODE, BIT(11));
 }
 
 static irqreturn_t mtu3_link_isr(struct mtu3 *mtu)
@@ -980,6 +1034,10 @@ int ssusb_gadget_init(struct ssusb_mtk *ssusb)
 
 	INIT_DELAYED_WORK(&mtu->check_ltssm_work, mtu3_check_ltssm_work);
 	#endif
+
+#if defined(CONFIG_BATTERY_SAMSUNG)
+	INIT_WORK(&mtu->set_vbus_current_work, musb_set_vbus_current_work);
+#endif
 
 	/* check the max_speed parameter */
 	switch (mtu->max_speed) {

@@ -32,6 +32,10 @@
 #include <linux/usb/gadget.h>
 #include <linux/usb/otg.h>
 
+#if defined(CONFIG_BATTERY_SAMSUNG)
+#include "../../battery/common/sec_charging_common.h"
+#endif
+
 struct mtu3;
 struct mtu3_ep;
 struct mtu3_request;
@@ -414,6 +418,11 @@ struct mtu3 {
 	u32 hw_version;
 
 	struct delayed_work check_ltssm_work;
+
+#if defined(CONFIG_BATTERY_SAMSUNG)
+	struct work_struct set_vbus_current_work;
+	int	vbus_current; /* 100mA,  500mA,  900mA */
+#endif
 };
 
 static inline struct mtu3 *gadget_to_mtu3(struct usb_gadget *g)

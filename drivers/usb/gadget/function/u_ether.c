@@ -308,7 +308,7 @@ static void rx_complete(struct usb_ep *ep, struct usb_request *req)
 		}
 		if (!status)
 			queue = 1;
-	rndis_test_rx_usb_in++;
+		rndis_test_rx_usb_in++;
 		break;
 
 	/* software-driven interface shutdown */
@@ -342,12 +342,12 @@ clean:
 	if (queue && dev->rx_frames.qlen <= u_ether_rx_pending_thld) {
 		if (rx_submit(dev, req, GFP_ATOMIC) < 0) {
 			spin_lock(&dev->reqrx_lock);
-		list_add(&req->list, &dev->rx_reqs);
+			list_add(&req->list, &dev->rx_reqs);
 			spin_unlock(&dev->reqrx_lock);
-	}
+		}
 	} else {
 		spin_lock(&dev->reqrx_lock);
-	list_add(&req->list, &dev->rx_reqs);
+		list_add(&req->list, &dev->rx_reqs);
 		spin_unlock(&dev->reqrx_lock);
 	}
 
@@ -735,8 +735,8 @@ free_buf:
 	/* tx_req_bufsize = 0 retries mem alloc on next eth_start_xmit */
 	dev->tx_req_bufsize = 0;
 	list_for_each(act, &dev->tx_reqs) {
-		req = container_of(act, struct usb_request, list);
-		kfree(req->buf);
+	req = container_of(act, struct usb_request, list);
+	kfree(req->buf);
 	req->buf = NULL;
 	}
 	return -ENOMEM;
@@ -1292,7 +1292,7 @@ int gether_register_netdev(struct net_device *net)
 		dev_dbg(&g->dev, "register_netdev failed, %d\n", status);
 		return status;
 	} else {
-		INFO(dev, "HOST MAC %pM\n", dev->host_mac);
+		DBG(dev, "HOST MAC %pM\n", dev->host_mac);
 
 		/* two kinds of host-initiated state changes:
 		 *  - iff DATA transfer is active, carrier is "on"
@@ -1308,7 +1308,7 @@ int gether_register_netdev(struct net_device *net)
 	if (status)
 		pr_warn("cannot set self ethernet address: %d\n", status);
 	else
-		INFO(dev, "MAC %pM\n", dev->dev_mac);
+		DBG(dev, "MAC %pM\n", dev->dev_mac);
 
 	return status;
 }

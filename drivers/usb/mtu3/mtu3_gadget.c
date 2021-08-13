@@ -704,6 +704,22 @@ static int mtu3_gadget_stop(struct usb_gadget *g)
 	return 0;
 }
 
+extern void BATTERY_SetUSBState(int usb_state_value);
+
+static int mtu3_gadget_vbus_draw(struct usb_gadget *gadget, unsigned mA)
+{
+	struct mtu3 *mtu = gadget_to_mtu3(gadget);
+
+	dev_info(mtu->dev, "%s %d mA\n", __func__, mA);
+
+	if (mA >= 500)
+		BATTERY_SetUSBState(2);
+	else
+		BATTERY_SetUSBState(0);
+
+	return 0;
+}
+
 static const struct usb_gadget_ops mtu3_gadget_ops = {
 	.get_frame = mtu3_gadget_get_frame,
 	.wakeup = mtu3_gadget_wakeup,
@@ -711,6 +727,7 @@ static const struct usb_gadget_ops mtu3_gadget_ops = {
 	.pullup = mtu3_gadget_pullup,
 	.udc_start = mtu3_gadget_start,
 	.udc_stop = mtu3_gadget_stop,
+	.vbus_draw = mtu3_gadget_vbus_draw,
 };
 
 static void mtu3_state_reset(struct mtu3 *mtu)
@@ -833,6 +850,10 @@ void mtu3_gadget_resume(struct mtu3 *mtu)
 void mtu3_gadget_suspend(struct mtu3 *mtu)
 {
 	dev_info(mtu->dev, "gadget SUSPEND\n");
+#if defined(CONFIG_BATTERY_SAMSUNG)
+	mtu->vbus_current = USB_CURRENT_SUSPENDED;
+	schedule_work(&mtu->set_vbus_current_work);
+#endif	
 	if (mtu->gadget_driver && mtu->gadget_driver->suspend) {
 		spin_unlock(&mtu->lock);
 		mtu->gadget_driver->suspend(&mtu->g);
@@ -859,15 +880,24 @@ void mtu3_gadget_disconnect(struct mtu3 *mtu)
 
 	mtu3_state_reset(mtu);
 	usb_gadget_set_state(&mtu->g, USB_STATE_NOTATTACHED);
+
+	mtu3_gadget_vbus_draw(&mtu->g, 0);
 }
 
 void mtu3_gadget_reset(struct mtu3 *mtu)
 {
 	dev_info(mtu->dev, "gadget RESET\n");
 
+#if defined(CONFIG_BATTERY_SAMSUNG)
+	mtu->vbus_current = USB_CURRENT_UNCONFIGURED;
+	schedule_work(&mtu->set_vbus_current_work);
+#endif
+
 	/* report disconnect, if we didn't flush EP state */
 	if (mtu->g.speed != USB_SPEED_UNKNOWN)
 		mtu3_gadget_disconnect(mtu);
 	else
 		mtu3_state_reset(mtu);
+
+	mtu3_gadget_vbus_draw(&mtu->g, 0);
 }

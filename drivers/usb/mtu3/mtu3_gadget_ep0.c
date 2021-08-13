@@ -17,6 +17,7 @@
  */
 
 #include "mtu3.h"
+#include "mtu3_hal.h"
 
 /* ep0 is always mtu3->in_eps[0] */
 #define	next_ep0_request(mtu)	next_request((mtu)->ep0)
@@ -276,18 +277,22 @@ static int handle_test_mode(struct mtu3 *mtu, struct usb_ctrlrequest *setup)
 	case TEST_J:
 		dev_dbg(mtu->dev, "TEST_J\n");
 		mtu->test_mode_nr = TEST_J_MODE;
+		ssusb_set_preemphasis(false);
 		break;
 	case TEST_K:
 		dev_dbg(mtu->dev, "TEST_K\n");
 		mtu->test_mode_nr = TEST_K_MODE;
+		ssusb_set_preemphasis(false);
 		break;
 	case TEST_SE0_NAK:
 		dev_dbg(mtu->dev, "TEST_SE0_NAK\n");
 		mtu->test_mode_nr = TEST_SE0_NAK_MODE;
+		ssusb_set_preemphasis(true);
 		break;
 	case TEST_PACKET:
 		dev_dbg(mtu->dev, "TEST_PACKET\n");
 		mtu->test_mode_nr = TEST_PACKET_MODE;
+		ssusb_set_preemphasis(true);
 		break;
 	default:
 		handled = -EINVAL;
@@ -472,6 +477,13 @@ static int handle_standard_request(struct mtu3 *mtu,
 		handled = 1;
 		break;
 	case USB_REQ_SET_CONFIGURATION:
+#if defined(CONFIG_BATTERY_SAMSUNG)
+		if (mtu->g.speed == USB_SPEED_SUPER)
+			mtu->vbus_current = USB_CURRENT_SUPER_SPEED;
+		else
+			mtu->vbus_current = USB_CURRENT_HIGH_SPEED;
+		schedule_work(&mtu->set_vbus_current_work);
+#endif
 		if (state == USB_STATE_ADDRESS) {
 			usb_gadget_set_state(&mtu->g,
 					USB_STATE_CONFIGURED);

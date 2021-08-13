@@ -404,7 +404,7 @@ __acquires(&port->port_lock)
 
 		req->length = len;
 		list_del(&req->list);
-		req->zero = (gs_buf_data_avail(&port->port_write_buf) == 0);
+		req->zero = (len % in->maxpacket == 0);
 
 		pr_vdebug("ttyGS%d: tx len=%d, 0x%02x 0x%02x 0x%02x ...\n",
 			  port->port_num, len, *((u8 *)req->buf),
@@ -414,8 +414,8 @@ __acquires(&port->port_lock)
 			static DEFINE_RATELIMIT_STATE(ratelimit, 1 * HZ, 10);
 
 			if (__ratelimit(&ratelimit)) {
-				USERIAL_LOG("%s:ttyGS%d:w=%d,0x%x0x%x0x%x\n",
-						__func__, port->port_num, len,
+				USERIAL_LOG("%s:ttyGS%d:w=%d, req->buf=0x%pK 0x%x0x%x0x%x\n",
+						__func__, port->port_num, len, req->buf,
 						*((u8 *)req->buf),
 						*((u8 *)req->buf+1),
 						*((u8 *)req->buf+2));
@@ -670,6 +670,22 @@ static void gs_write_complete(struct usb_ep *ep, struct usb_request *req)
 		/* FALL THROUGH */
 	case 0:
 		/* normal completion */
+		{
+			static unsigned int	skip;
+			static DEFINE_RATELIMIT_STATE(ratelimit, 1 * HZ, 10);
+
+			if (__ratelimit(&ratelimit)) {
+				USERIAL_LOG("%s:ttyGS%d:w=%d, req->buf=0x%pK\n",
+						__func__, port->port_num, req->actual, req->buf);
+				if (skip > 0) {
+					USERIAL_LOG("%s skipped %d bytes\n",
+							__func__, skip);
+					skip = 0;
+				}
+			} else
+				skip += req->actual;
+		}
+
 		gs_start_tx(port);
 		break;
 
@@ -762,7 +778,8 @@ static int gs_start_io(struct gs_port *port)
 		gs_start_tx(port);
 		/* Unblock any pending writes into our circular buffer, in case
 		 * we didn't in gs_start_tx() */
-		tty_wakeup(port->port.tty);
+		if (port->port.tty)
+			tty_wakeup(port->port.tty);
 	} else {
 		gs_free_requests(ep, head, &port->read_allocated);
 		gs_free_requests(port->port_usb->in, &port->write_pool,
@@ -1412,7 +1429,8 @@ int gserial_alloc_line(unsigned char *line_num)
 {
 	struct usb_cdc_line_coding	coding;
 	struct device			*tty_dev;
-	int				ret;
+	/* prevent issue fix */
+	int				ret = -EBUSY;
 	int				port_num;
 
 	coding.dwDTERate = cpu_to_le32(9600);
@@ -1420,7 +1438,12 @@ int gserial_alloc_line(unsigned char *line_num)
 	coding.bParityType = USB_CDC_NO_PARITY;
 	coding.bDataBits = USB_CDC_1_STOP_BITS;
 
-	for (port_num = 0; port_num < MAX_U_SERIAL_PORTS; port_num++) {
+	if (*line_num)
+		port_num =  *line_num;
+	else
+		port_num = 0;
+
+	for (; port_num < MAX_U_SERIAL_PORTS; port_num++) {
 		ret = gs_port_alloc(port_num, &coding);
 		if (ret == -EBUSY)
 			continue;
