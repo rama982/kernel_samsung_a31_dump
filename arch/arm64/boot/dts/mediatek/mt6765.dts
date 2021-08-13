@@ -36,7 +36,7 @@
 	/* chosen */
 	chosen: chosen {
 		bootargs = "console=tty0 console=ttyS0,921600n1 vmalloc=400M \
-				slub_debug=OFZPU page_owner=on \
+				page_owner=on \
 				swiotlb=noforce androidboot.hardware=mt6765 \
 				maxcpus=8 loop.max_part=7 \
 				firmware_class.path=/vendor/firmware";
@@ -664,12 +664,6 @@
 	gauge_timer {
 		compatible = "mediatek,gauge_timer_service";
 	};
-
-#if (CONFIG_MTK_ADDITIONAL_BATTERY_TABLE == 1)
-	#include "mediatek/bat_setting/mt6765_battery_prop_ext.dtsi"
-#else
-	#include "mediatek/bat_setting/mt6765_battery_prop.dtsi"
-#endif
 
 	topmisc@10011000 {
 		compatible = "mediatek,topmisc";
@@ -2155,18 +2149,6 @@
 				<&mmsys_config CLK_MM_IMG_DL_RELAY>,
 				<&mmsys_config CLK_MM_IMG_DL_ASYNC_TOP>;
 		clock-names = "CAM_MDP", "IMG_DL_RELAY", "IMG_DL_ASYNC_TOP";
-	};
-
-	nfc:nfc {
-			compatible = "mediatek,nfc-gpio-v2";
-			gpio-rst = <172>;
-			gpio-rst-std = <&pio 172 0x0>;
-			gpio-irq = <10>;
-			gpio-irq-std = <&pio 10 0x0>;
-		};
-
-	irq_nfc: irq_nfc {
-		compatible = "mediatek,irq_nfc-eint";
 	};
 
 	disp_mutex0: disp_mutex0@14001000 {

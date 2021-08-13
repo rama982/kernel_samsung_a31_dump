@@ -57,15 +57,18 @@
 
 			/*
 			 * No DP, host + device
-			 *	pd,id-vdo-size = <3>;
-			 *	pd,id-vdo-data = <0xd10029cf 0x0 0x63600000>;
+			 *	pd,id-vdo-size = <6>;
+			 *	pd,id-vdo-data = <0xd14029cf 0x0 0x63600000
+						 0x40800010 0x0 0x20800000>;
 			 * With DP
-			 *	pd,id-vdo-size = <3>;
-			 *	pd,id-vdo-data = <0xd60029cf 0x0 0x63600000>;
+			 *	pd,id-vdo-size = <6>;
+			 *	pd,id-vdo-data = <0xd54029cf 0x0 0x63600000
+						 0x40800010 0x0 0x20800000>;
 			 */
 
-			pd,id-vdo-size = <3>;
-			pd,id-vdo-data = <0xd60029cf 0x0 0x63600000>;
+			pd,id-vdo-size = <6>;
+			pd,id-vdo-data = <0xd14029cf 0x0 0x63600000
+					 0x40800010 0x0 0x20800000>;
 
 			bat,nr = <1>;
 			bat-info0 {
