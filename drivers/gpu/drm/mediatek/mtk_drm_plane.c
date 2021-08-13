@@ -352,7 +352,6 @@ void mtk_plane_get_comp_state(struct drm_plane *plane,
 	unsigned int plane_index = to_crtc_plane_index(plane->index);
 
 	memset(comp_state, 0x0, sizeof(struct mtk_plane_comp_state));
-
 	if (lock)
 		mutex_lock(&mtk_drm->lyeblob_list_mutex);
 	list_for_each_entry_safe(lyeblob_ids, next, &mtk_drm->lyeblob_head,
@@ -363,7 +362,6 @@ void mtk_plane_get_comp_state(struct drm_plane *plane,
 		} else if (lyeblob_ids->lye_idx > crtc_lye_idx)
 			break;
 	}
-
 	if (lock)
 		mutex_unlock(&mtk_drm->lyeblob_list_mutex);
 }
@@ -379,7 +377,6 @@ static void mtk_plane_atomic_update(struct drm_plane *plane,
 	int src_w, src_h, dst_x, dst_y, dst_w, dst_h, i;
 	struct mtk_drm_crtc *mtk_crtc;
 	unsigned int plane_index = to_crtc_plane_index(plane->index);
-	static int cnt;
 	bool skip_update = 0;
 	int crtc_index = 0;
 
@@ -461,13 +458,6 @@ static void mtk_plane_atomic_update(struct drm_plane *plane,
 
 	if (state->pending.enable)
 		atomic_set(&mtk_crtc->already_config, 1);
-
-	if (cnt <= 5) {
-		cnt++;
-		if (state->pending.format == DRM_FORMAT_RGB565 &&
-			drm_crtc_index(crtc) == 0)
-			skip_update = 1;
-	}
 
 	/* workaround for skip plane update when hwc set crtc */
 	if (skip_update == 0)

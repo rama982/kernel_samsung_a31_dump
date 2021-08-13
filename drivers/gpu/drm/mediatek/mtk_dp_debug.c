@@ -140,15 +140,17 @@ void mtk_dp_debug(const char *opt)
 			mtk_dp_hdcp_enable(false);
 	} else if (strncmp(opt, "adjust_phy:", 11) == 0) {
 		int ret = 0;
-		uint8_t index, c0, cp1;
+		uint8_t c0 = 32, cp1;
 
-		ret = sscanf(opt, "adjust_phy:%d,%d,%d\n", &index, &c0, &cp1);
-		if (ret != 3) {
-			DPTXERR("ret = %s\n", ret);
-			return;
+		ret = sscanf(opt, "adjust_phy:%d,%d\n", &c0, &cp1);
+		if (ret != 2) {
+			DPTXMSG("ret = %s\n", ret);
+			c0 = 32;
+			cp1 = 0;
 		}
 
-		mtk_dp_set_adjust_phy(index, c0, cp1);
+		DPTXMSG("g_c0 = %d, g_cp1 =%d\n", c0, cp1);
+		mtk_dp_set_adjust_phy(c0, cp1);
 	} else if (strncmp(opt, "setpowermode", 12) == 0) {
 		mtk_dp_SWInterruptSet(2);
 		mdelay(100);
@@ -166,19 +168,6 @@ void mtk_dp_debug(const char *opt)
 		DPTXMSG("Paterrn Gen:enable = %d, resolution =%d\n",
 			enable, resolution);
 		mdrv_DPTx_PatternSet(enable, resolution);
-	} else if (strncmp(opt, "maxlinkrate:", 12) == 0) {
-		int ret = 0;
-		uint8_t enable, maxlinkrate;
-
-		ret = sscanf(opt, "maxlinkrate:%d,%d\n", &enable, &maxlinkrate);
-		if (ret != 2) {
-			DPTXMSG("ret = %s\n", ret);
-			return;
-		}
-
-		DPTXMSG("set max link rate:enable = %d, maxlinkrate =%d\n",
-			enable, maxlinkrate);
-		mdrv_DPTx_set_maxlinkrate(enable, maxlinkrate);
 	}
 }
 
@@ -196,13 +185,11 @@ struct mtk_dp_debug_info {
 
 enum mtk_dp_debug_index {
 	DP_INFO_HDCP      = 0,
-	DP_INFO_PHY       = 1,
-	DP_INFO_MAX
+	DP_INFO_MAX       = 1
 };
 
 static struct mtk_dp_debug_info dp_info[DP_INFO_MAX] = {
-	{"HDCP", DP_INFO_HDCP},
-	{"PHY", DP_INFO_PHY},
+	{"HDCP", DP_INFO_HDCP}
 };
 
 static uint8_t g_infoIndex = DP_INFO_HDCP;
@@ -228,9 +215,6 @@ static ssize_t mtk_dp_debug_read(struct file *file, char __user *ubuf,
 	case DP_INFO_HDCP:
 		ret = mtk_dp_hdcp_getInfo(buffer, PAGE_SIZE/8);
 		break;
-	case DP_INFO_PHY:
-		ret = mtk_dp_phy_getInfo(buffer, PAGE_SIZE/8);
-		break;
 	default:
 		DPTXERR("Invalid inedx!");
 	}
@@ -254,7 +238,7 @@ static void mtk_dp_process_dbg_opt(const char *opt)
 	}
 
 	if (g_infoIndex == DP_INFO_MAX)
-		g_infoIndex = DP_INFO_HDCP;
+		g_infoIndex == DP_INFO_HDCP;
 }
 
 static ssize_t mtk_dp_debug_write(struct file *file, const char __user *ubuf,
@@ -264,19 +248,18 @@ static ssize_t mtk_dp_debug_write(struct file *file, const char __user *ubuf,
 	size_t ret;
 	char cmd_buffer[512];
 	char *tok;
-	char *cmd = cmd_buffer;
 
 	ret = count;
 	if (count > debug_bufmax)
 		count = debug_bufmax;
 
-	if (copy_from_user(&cmd_buffer, ubuf, count) != 0ULL)
+	if (copy_from_user(&cmd_buffer, ubuf, count))
 		return -EFAULT;
 
-	cmd_buffer[count] = '\0';
+	cmd_buffer[count] = 0;
 
-	DPTXMSG("[mtkdp_dbg]%s!\n", cmd_buffer);
-	while ((tok = strsep(&cmd, " ")) != NULL)
+	DPTXMSG("[mtkdp_dbg] %s\n", cmd_buffer);
+	while ((tok = strsep((char **)&cmd_buffer, " ")) != NULL)
 		mtk_dp_process_dbg_opt(tok);
 
 	return ret;

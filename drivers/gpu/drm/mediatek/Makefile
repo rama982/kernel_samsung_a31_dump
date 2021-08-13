@@ -10,6 +10,8 @@ mediatek-drm-y := mtk_drm_drv.o \
 		  mtk_disp_rdma.o \
 		  mtk_disp_rsz.o \
 		  mtk_disp_wdma.o \
+		  mtk_notify.o \
+		  mtk_cust.o \
 		  mtk_drm_crtc.o \
 		  mtk_drm_ddp.o \
 		  mtk_drm_ddp_addon.o \
@@ -56,7 +58,7 @@ obj-y += mtk_dp_intf.o \
 
 ifeq (yy, $(CONFIG_MTK_TEE_GP_SUPPORT)$(CONFIG_TRUSTONIC_TEE_SUPPORT))
 obj-y += ca/
-ccflags-y += -DDPTX_HDCP_ENABLE
+#ccflags-y += -DDPTX_HDCP_ENABLE
 obj-y += mtk_dp_hdcp1x.o \
 	mtk_dp_hdcp2.o
 endif
@@ -81,7 +83,6 @@ ccflags-y += -I$(srctree)/drivers/misc/mediatek/dramc/$(MTK_PLATFORM)	\
              -I$(srctree)/drivers/misc/mediatek/smi/			\
              -I$(srctree)/drivers/misc/mediatek/mmp/			\
              -I$(srctree)/drivers/misc/mediatek/mmdvfs/			\
-             -I$(srctree)/drivers/misc/mediatek/pmic/			\
              -I$(srctree)/drivers/iommu/				\
              -I$(srctree)/drivers/devfreq/				\
              -I$(srctree)/drivers/gpu/drm/				\

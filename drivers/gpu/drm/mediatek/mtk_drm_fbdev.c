@@ -152,8 +152,7 @@ void disp_get_fb_address(unsigned long *fbVirAddr)
 {
 	*fbVirAddr = (unsigned long)debug_info->screen_base;
 	pr_info(
-		  "%s fbdev->fb_va_base = 0x%p\n",
-		  __func__, debug_info->screen_base);
+		  "fbdev->fb_va_base = 0x%p\n", debug_info->screen_base);
 }
 
 int pan_display_test(int frame_num, int bpp)
@@ -168,12 +167,6 @@ int pan_display_test(int frame_num, int bpp)
 
 	debug_info->var.yoffset = 0;
 	disp_get_fb_address((unsigned long *)&fb_va);
-	if (!fb_va)
-		return 0;
-
-	if (!mtk_crtc_frame_buffer_existed())
-		return 0;
-
 	fb_size = debug_info->fix.smem_len;
 	w = debug_info->var.xres;
 	h = debug_info->var.yres;
@@ -207,7 +200,6 @@ int pan_display_test(int frame_num, int bpp)
 		mtk_drm_fb_pan_display(&debug_info->var, debug_info);
 	}
 
-	DDPMSG("%s, %d--\n", __func__, __LINE__);
 	return 0;
 }
 
@@ -266,9 +258,6 @@ bool mtk_drm_lcm_is_connect(void)
 int _parse_tag_videolfb(unsigned int *vramsize, phys_addr_t *fb_base,
 			unsigned int *fps)
 {
-#ifdef CONFIG_MTK_DISP_NO_LK
-		return -1;
-#else
 	struct device_node *chosen_node;
 
 	*fps = 6000;
@@ -302,7 +291,6 @@ found:
 	DDPINFO("[DT][videolfb] fps	   = %d\n", *fps);
 
 	return 0;
-#endif
 }
 
 int free_fb_buf(void)

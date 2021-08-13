@@ -305,29 +305,6 @@ config DRM_PANEL_TIANMA_R66451_CMD_120HZ_NO_MIPI_SWITCH
 	  and uses 24-bits RGB per pixel. It provides a MIPI DSI interface to
 	  host. Support 60, 90, and 120 fps and no mipi switch when fps change.
 
-config DRM_PANEL_TRULY_FT8756_VDO
-	tristate "TRULY FHD+ vdo mode panel"
-	depends on OF
-	depends on DRM_MIPI_DSI
-	depends on BACKLIGHT_CLASS_DEVICE
-	help
-	  Say Y here if you want to enable support for TRULY FT8756 VDO
-	  mode Full HD Plus panel. The panel has a 1080x2300 resolution
-	  and uses 24-bits RGB per pixel. It provides a MIPI DSI interface
-	  to host.
-
-config DRM_PANEL_TRULY_FT8756_VDO_FAKE_WCG
-	tristate "TRULY FHD+ vdo mode fake wcg panel"
-	depends on OF
-	depends on DRM_MIPI_DSI
-	depends on BACKLIGHT_CLASS_DEVICE
-	help
-	  Say Y here if you want to enable support for TRULY FT8756 VDO
-	  mode Full HD Plus fake wcg panel. The panel has a 1080x2300 resolution
-	  and uses 24-bits RGB per pixel. It provides a MIPI DSI interface
-	  to host.
-
-
 config DRM_PANEL_TIANMA_R66451_CMD_120HZ
 	tristate "TIANMA  FHD+ cmd mode panel"
 	depends on OF
@@ -458,28 +435,6 @@ config DRM_PANEL_K6853V1_64_ALPHA_VDO_0032
 	  Say Y here if you want to enable support for K6853V1 alpha
 	  phone vdo mode panel. The panel has a 1080x2400 resolution and uses
 	  24-bits RGB per pixel. It provides a MIPI DSI interface
-	  to host.
-
-config DRM_PANEL_TRULY_NT35595_VDO
-	tristate "TRULY  FHD+ video mode panel"
-	depends on OF
-	depends on DRM_MIPI_DSI
-	depends on BACKLIGHT_CLASS_DEVICE
-	help
-	  Say Y here if you want to enable support for TRULY NT35595 VDO
-	  mode Full HD Plus panel. The panel has a 1080x1920 resolution
-	  and uses 24-bits RGB per pixel. It provides a MIPI DSI interface
-	  to host.
-
-config DRM_PANEL_TRULY_NT35595_CMD
-	tristate "TRULY  FHD+ cmd mode panel"
-	depends on OF
-	depends on DRM_MIPI_DSI
-	depends on BACKLIGHT_CLASS_DEVICE
-	help
-	  Say Y here if you want to enable support for TRULY nt35595 CMD
-	  mode Full HD Plus panel. The panel has a 1080x1920 resolution
-	  and uses 24-bits RGB per pixel. It provides a MIPI DSI interface
 	  to host.
 
 endmenu
@@ -626,6 +581,36 @@ config DRM_PANEL_SC_NT36672C_VDO_60HZ
 	  vdo mode Full HD Plus 60HZ panel. The panel has a 1080x2400
 	  resolution and uses 24-bits RGB per pixel. It provides a
 	  MIPI DSI interface to host.
+
+config DRM_PANEL_K6853V1_64_TD4150_VDO
+	tristate "K6853V1 burst mode panel"
+	depends on OF
+	depends on DRM_MIPI_DSI
+	depends on BACKLIGHT_CLASS_DEVICE
+	help
+	  Say Y here if you want to enable support for K6853V1 burst mode panel.
+	  The panel has a 720x1600 resolution and uses 24-bits RGB per pixel.
+	  It provides a MIPI DSI interface to host.
+
+config DRM_PANEL_K6853V1_64_ILI9882N_VDO
+	tristate "K6853V1 panel"
+	depends on OF
+	depends on DRM_MIPI_DSI
+	depends on BACKLIGHT_CLASS_DEVICE
+	help
+	  Say Y here if you want to enable support for K6853V1 panel.
+	  The panel has a 720x1600 resolution and uses 24-bits RGB per pixel.
+	  It provides a MIPI DSI interface to host.
+
+config DRM_PANEL_K6853V1_64_NT36675_VDO_90HZ
+	tristate "K6853V1 panel"
+	depends on OF
+	depends on DRM_MIPI_DSI
+	depends on BACKLIGHT_CLASS_DEVICE
+	help
+	  Say Y here if you want to enable support for K6853V1 panel.
+	  The panel has a 720x1600 resolution and uses 24-bits RGB per pixel.
+	  It provides a MIPI DSI interface to host.
 
 config DRM_PANEL_SAMSUNG_S68FC01_VDO_AOD
 	tristate "samsung s68fc01 fhdp vdo aod panel"
