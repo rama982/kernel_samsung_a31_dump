@@ -311,11 +311,11 @@ void msdc_sd_power(struct msdc_host *host, u32 on)
 		}
 
 		/* VMCH VOLSEL */
-		msdc_ldo_power(card_on, host->mmc->supply.vmmc, VOL_3000,
+		msdc_ldo_power(card_on, host->mmc->supply.vmmc, VOL_2950,
 			&host->power_flash);
 
 		/* VMC VOLSEL */
-		msdc_ldo_power(on, host->mmc->supply.vqmmc, VOL_3000,
+		msdc_ldo_power(on, host->mmc->supply.vqmmc, VOL_2950,
 			&host->power_io);
 
 		pr_info("msdc%d power %s\n", host->id, (on ? "on" : "off"));
@@ -527,6 +527,27 @@ int msdc_get_ccf_clk_pointer(struct platform_device *pdev,
 		MSDC0_HCLK_NAME, MSDC1_HCLK_NAME
 	};
 
+	/* clk enable flow
+	 * First turn on the clock source of the MSDC register
+	 * msdc src hclk -> msdc hclk cg
+	 */
+
+	if  (pdev->id == 0) {
+		host->src_hclk_ctl = devm_clk_get(&pdev->dev,
+				MSDC0_SRC_HCLK_NAME);
+		if (IS_ERR(host->src_hclk_ctl)) {
+			pr_notice("[msdc%d] cannot get src hclk ctl\n",
+				pdev->id);
+			WARN_ON(1);
+			return 1;
+		}
+		if (clk_prepare_enable(host->src_hclk_ctl)) {
+			pr_notice("[msdc%d] cannot prepare src hclk ctrl\n",
+				pdev->id);
+			return 1;
+		}
+	}
+
 	if  (clk_names[pdev->id]) {
 		host->clk_ctl = devm_clk_get(&pdev->dev,
 			clk_names[pdev->id]);
@@ -535,7 +556,7 @@ int msdc_get_ccf_clk_pointer(struct platform_device *pdev,
 				pdev->id);
 			return 1;
 		}
-		if (clk_prepare(host->clk_ctl)) {
+		if (clk_prepare_enable(host->clk_ctl)) {
 			pr_notice("[msdc%d] cannot prepare clk ctrl\n",
 				pdev->id);
 			return 1;
@@ -550,14 +571,14 @@ int msdc_get_ccf_clk_pointer(struct platform_device *pdev,
 				pdev->id);
 			return 1;
 		}
-		if (clk_prepare(host->hclk_ctl)) {
+		if (clk_prepare_enable(host->hclk_ctl)) {
 			pr_notice("[msdc%d] cannot prepare hclk ctrl\n",
 				pdev->id);
 			return 1;
 		}
 	}
 	if (host->clk_ctl) {
-		clk_freq = clk_get_rate(host->clk_ctl);
+		clk_freq = (u32)clk_get_rate(host->clk_ctl);
 		if (clk_freq > 0)
 			host->hclk = clk_freq;
 	}
@@ -572,7 +593,7 @@ int msdc_get_ccf_clk_pointer(struct platform_device *pdev,
 			WARN_ON(1);
 			return 1;
 		}
-		if (clk_prepare(host->aes_clk_ctl)) {
+		if (clk_prepare_enable(host->aes_clk_ctl)) {
 			pr_notice(
 				"[msdc%d] can not prepare aes clock control\n",
 				pdev->id);
@@ -582,8 +603,9 @@ int msdc_get_ccf_clk_pointer(struct platform_device *pdev,
 	}
 #endif
 
-	pr_info("[msdc%d] hclk:%d, clk_ctl:%p, hclk_ctl:%p\n",
-		pdev->id, host->hclk, host->clk_ctl, host->hclk_ctl);
+	pr_info("[msdc%d] src_hclk_ctl:%d, hclk:%d, clk_ctl:%p, hclk_ctl:%p\n",
+		pdev->id, host->src_hclk_ctl, host->hclk,
+		host->clk_ctl, host->hclk_ctl);
 
 	return 0;
 }
@@ -1393,11 +1415,11 @@ void msdc_pin_config_by_id(u32 id, u32 mode)
 			/* Switch MSDC1_* to 50K ohm PD */
 #ifndef SD_GPIO_PAD_A_EN
 			MSDC_SET_FIELD(MSDC1_GPIO_PUPD0,
-				MSDC1_PUPD_ALL_MASK, 0x3F);
+				MSDC1_PUPD_ALL_MASK, 0x3E);
 			MSDC_SET_FIELD(MSDC1_GPIO_R0,
 				MSDC1_R0_ALL_MASK, 0x0);
 			MSDC_SET_FIELD(MSDC1_GPIO_R1,
-				MSDC1_R1_ALL_MASK, 0x3F);
+				MSDC1_R1_ALL_MASK, 0x3E);
 #else
 			MSDC_SET_FIELD(MSDC1_GPIO_PUPD0_A,
 				MSDC1_PUPD_ALL_MASK_A, 0x3F);
@@ -1412,11 +1434,11 @@ void msdc_pin_config_by_id(u32 id, u32 mode)
 			 */
 #ifndef SD_GPIO_PAD_A_EN
 			MSDC_SET_FIELD(MSDC1_GPIO_PUPD0,
-				MSDC1_PUPD_ALL_MASK, 0x1);
+				MSDC1_PUPD_ALL_MASK, 0x0);
 			MSDC_SET_FIELD(MSDC1_GPIO_R0,
 				MSDC1_R0_ALL_MASK, 0x0);
 			MSDC_SET_FIELD(MSDC1_GPIO_R1,
-				MSDC1_R1_ALL_MASK, 0x3F);
+				MSDC1_R1_ALL_MASK, 0x3E);
 #else
 			MSDC_SET_FIELD(MSDC1_GPIO_PUPD0_A,
 				MSDC1_PUPD_ALL_MASK_A, 0x1);

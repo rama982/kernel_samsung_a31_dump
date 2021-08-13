@@ -271,33 +271,9 @@ void msdc_sd_power(struct msdc_host *host, u32 on)
 		if (host->hw->flags & MSDC_SD_NEED_POWER)
 			card_on = 1;
 
-		/* Disable VMCH OC */
-		if (!card_on)
-			pmic_enable_interrupt(INT_VMCH_OC, 0, "sdcard");
-
 		/* VMCH VOLSEL */
-		msdc_ldo_power(card_on, host->mmc->supply.vmmc, VOL_3000,
+		msdc_ldo_power(card_on, host->mmc->supply.vmmc, VOL_2950,
 			&host->power_flash);
-
-		if (card_on) {
-			if (host->hw->cd_level == 1) {
-				/* 1: high; 0: low, vmch fast off
-				 * hw_det default high active
-				 */
-				pmic_set_register_value(PMIC_RG_LDO_VMCH_SD_POL,
-							0);
-			}
-			pmic_set_register_value(PMIC_RG_LDO_VMCH_SD_EN, 1);
-		} else {
-			udelay(1500);
-			pmic_set_register_value(PMIC_RG_LDO_VMCH_SD_EN, 0);
-		}
-
-		/* Enable VMCH OC */
-		if (card_on) {
-			mdelay(3);
-			pmic_enable_interrupt(INT_VMCH_OC, 1, "sdcard");
-		}
 
 		/* VMC VOLSEL */
 		/* rollback to 0mv in REG_VMC_VOSEL_CAL
@@ -473,7 +449,7 @@ int msdc_get_ccf_clk_pointer(struct platform_device *pdev,
 		pr_notice("[msdc%d] can not get clock control\n", pdev->id);
 		return 1;
 	}
-	if (clk_prepare(host->clk_ctl)) {
+	if (clk_prepare_enable(host->clk_ctl)) {
 		pr_notice("[msdc%d] can not prepare clock control\n", pdev->id);
 		return 1;
 	}
@@ -482,7 +458,7 @@ int msdc_get_ccf_clk_pointer(struct platform_device *pdev,
 		pr_notice("[msdc%d] can not get clock control\n", pdev->id);
 		return 1;
 	}
-	if (hclk_names[pdev->id] && clk_prepare(host->hclk_ctl)) {
+	if (hclk_names[pdev->id] && clk_prepare_enable(host->hclk_ctl)) {
 		pr_notice("[msdc%d] can not prepare hclock control\n",
 			pdev->id);
 		return 1;
@@ -498,7 +474,7 @@ int msdc_get_ccf_clk_pointer(struct platform_device *pdev,
 			WARN_ON(1);
 			return 1;
 		}
-		if (clk_prepare(host->aes_clk_ctl)) {
+		if (clk_prepare_enable(host->aes_clk_ctl)) {
 			pr_notice(
 				"[msdc%d] can not prepare aes clock control\n",
 				pdev->id);
@@ -1000,33 +976,34 @@ void msdc_pin_config_by_id(u32 id, u32 mode)
 		if (mode == MSDC_PIN_PULL_NONE) {
 		} else if (mode == MSDC_PIN_PULL_DOWN) {
 			/* Switch MSDC0_* to
-			 * cmd:pd50k,clk:pd50k, dat:pd50k,rstb:pu50k,dsl:pd50k
+			 * cmd:pd50k,clk:High-Z, dat:pd50k,rstb:pu50k,dsl:pd50k
 			 */
-			MSDC_SET_FIELD(MSDC0_GPIO_PUPD, 0xFFF, 0x7FF);
+			MSDC_SET_FIELD(MSDC0_GPIO_PUPD, 0xFFF, 0x7FE);
 			MSDC_SET_FIELD(MSDC0_GPIO_R0, 0xFFF, 0);
-			MSDC_SET_FIELD(MSDC0_GPIO_R1, 0xFFF, 0xFFF);
+			MSDC_SET_FIELD(MSDC0_GPIO_R1, 0xFFF, 0xFFE);
 		} else if (mode == MSDC_PIN_PULL_UP) {
 			/* Switch MSDC0_* to
-			 * cmd:pu10k,clk:pd50k, dat:pu10k,rstb:pu10k,dsl:pd50k
+			 * cmd:pu10k,clk:High-Z, dat:pu10k,rstb:pu10k,dsl:pd50k
 			 */
-			MSDC_SET_FIELD(MSDC0_GPIO_PUPD, 0xFFF, 0x401);
+			MSDC_SET_FIELD(MSDC0_GPIO_PUPD, 0xFFF, 0x400);
 			MSDC_SET_FIELD(MSDC0_GPIO_R0, 0xFFF, 0xBFE);
-			MSDC_SET_FIELD(MSDC0_GPIO_R1, 0xFFF, 0x401);
+			MSDC_SET_FIELD(MSDC0_GPIO_R1, 0xFFF, 0x400);
 		}
 	} else if (id == 1) {
 		if (mode == MSDC_PIN_PULL_NONE) {
 		} else if (mode == MSDC_PIN_PULL_DOWN) {
 			/* Switch MSDC1_* to 50K ohm PD */
-			MSDC_SET_FIELD(MSDC1_GPIO_PUPD, 0x3F, 0x3F);
+			/* Switch MSDC1_CLK to High-Z */
+			MSDC_SET_FIELD(MSDC1_GPIO_PUPD, 0x3F, 0x3E);
 			MSDC_SET_FIELD(MSDC1_GPIO_R0, 0x3F, 0);
-			MSDC_SET_FIELD(MSDC1_GPIO_R1, 0x3F, 0x3F);
+			MSDC_SET_FIELD(MSDC1_GPIO_R1, 0x3F, 0x3E);
 		} else if (mode == MSDC_PIN_PULL_UP) {
-			/* Switch MSDC1_CLK to 50K ohm PD,
+			/* Switch MSDC1_CLK to High-Z,
 			 * MSDC1_CMD/MSDC1_DAT* to 10K ohm PU
 			 */
-			MSDC_SET_FIELD(MSDC1_GPIO_PUPD, 0x3F, 0x1);
+			MSDC_SET_FIELD(MSDC1_GPIO_PUPD, 0x3F, 0x0);
 			MSDC_SET_FIELD(MSDC1_GPIO_R0, 0x3F, 0x3E);
-			MSDC_SET_FIELD(MSDC1_GPIO_R1, 0x3F, 0x1);
+			MSDC_SET_FIELD(MSDC1_GPIO_R1, 0x3F, 0x0);
 		}
 	} else if (id == 2) {
 	}
