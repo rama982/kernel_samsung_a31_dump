@@ -62,7 +62,6 @@ void save_sys_bt(unsigned long long time_stamp,
 {
 	char buf[256];
 	char dbg_st[128];
-	int len;
 
 	memset(&tracker_bt, 0, sizeof(struct sys_bt));
 	tracker_bt.t1 = time_stamp;
@@ -75,11 +74,10 @@ void save_sys_bt(unsigned long long time_stamp,
 	tracker_bt.fp4 = CALLER_ADDR4;
 	tracker_bt.fp5 = CALLER_ADDR5;
 	tracker_bt.fp6 = CALLER_ADDR6;
-	len = snprintf(buf, sizeof(buf),
+	snprintf(buf, sizeof(buf),
 		"CPU%d extra_dump_%d, ts=%lld\n",
 			cpu, t, time_stamp);
-	if (len > 0)
-		aee_sram_fiq_log(buf);
+	aee_sram_fiq_log(buf);
 	aee_print_ip_sym(tracker_bt.fp0, time_stamp, cpu, t);
 	aee_print_ip_sym(tracker_bt.fp1, time_stamp, cpu, t);
 	aee_print_ip_sym(tracker_bt.fp2, time_stamp, cpu, t);
@@ -88,25 +86,22 @@ void save_sys_bt(unsigned long long time_stamp,
 	aee_print_ip_sym(tracker_bt.fp5, time_stamp, cpu, t);
 	aee_print_ip_sym(tracker_bt.fp6, time_stamp, cpu, t);
 #ifdef CONFIG_MTK_SYSTRACKER_V2
-	len = snprintf(dbg_st, sizeof(dbg_st),
+	snprintf(dbg_st, sizeof(dbg_st),
 			"CPU%d 0x10000220=0x%x - (%d)<%d>[%lld]\n",
 				tracker_bt.cpu,
 				readl(IOMEM(BUS_PROTECT_BASE+0x220)),
 				cpu, t, time_stamp);
-	if (len > 0)
-		aee_sram_fiq_log(dbg_st);
+	aee_sram_fiq_log(dbg_st);
 #endif
 	consys_print(time_stamp, cpu, t);
 
-	len = snprintf(dbg_st, sizeof(dbg_st),
+	snprintf(dbg_st, sizeof(dbg_st),
 		"CPU%d BUS_DBG_CON=0x%x - (%d)<%d>[%lld]\n",
 		tracker_bt.cpu, readl(IOMEM(BUS_DBG_CON)), cpu, t, time_stamp);
-	if (len > 0)
-		aee_sram_fiq_log(dbg_st);
-	len = snprintf(dbg_st, sizeof(dbg_st),
+	aee_sram_fiq_log(dbg_st);
+	snprintf(dbg_st, sizeof(dbg_st),
 		"END - (%d)<%d>[%lld]\n\n", cpu, t, time_stamp);
-	if (len > 0)
-		aee_sram_fiq_log(dbg_st);
+	aee_sram_fiq_log(dbg_st);
 }
 
 
@@ -115,12 +110,10 @@ static inline void aee_print_ip_sym
 		unsigned int cpu, unsigned int t)
 {
 	char buf[256];
-	int len;
 
-	len = snprintf(buf, sizeof(buf), "[<%p>] %pS - (%d)<%d>[%lld]\n",
+	snprintf(buf, sizeof(buf), "[<%p>] %pS - (%d)<%d>[%lld]\n",
 		(void *)ip, (void *)ip, cpu, t, time_stamp);
-	if (len > 0)
-		aee_sram_fiq_log(buf);
+	aee_sram_fiq_log(buf);
 }
 
 static void dump_backtrace_entry(unsigned long where,
@@ -136,7 +129,6 @@ void aee_dump_backtrace(struct pt_regs *regs, struct task_struct *tsk)
 	unsigned int cpuid;
 	unsigned long long ts;
 	char buf[256];
-	int len;
 
 	times++;
 	ts = sched_clock();
@@ -160,10 +152,9 @@ void aee_dump_backtrace(struct pt_regs *regs, struct task_struct *tsk)
 		frame.pc = thread_saved_pc(tsk);
 	}
 
-	len = snprintf(buf, sizeof(buf), "CPU%d trace_dump_%d, ts=%lld\n",
+	snprintf(buf, sizeof(buf), "CPU%d trace_dump_%d, ts=%lld\n",
 			cpuid, times, ts);
-	if (len > 0)
-		aee_sram_fiq_log(buf);
+	aee_sram_fiq_log(buf);
 	while (1) {
 		unsigned long where = frame.pc;
 		int ret;

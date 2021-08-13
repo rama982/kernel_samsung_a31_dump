@@ -61,8 +61,6 @@
 #include "mtk_qos_bound.h"
 #endif
 
-#include "swpm_me.h"
-
 #include <linux/regulator/consumer.h>
 static struct regulator *vcore_reg_id;
 
@@ -110,7 +108,6 @@ enum mmdvfs_log_level {
 	log_limit,
 	log_smi_freq,
 	log_qos_validation,
-	log_qoslarb,
 };
 
 #define STEP_UNREQUEST -1
@@ -188,6 +185,7 @@ static DEFINE_MUTEX(step_mutex);
 static DEFINE_MUTEX(bw_mutex);
 static s32 total_hrt_bw = UNINITIALIZED_VALUE;
 static BLOCKING_NOTIFIER_HEAD(hrt_bw_throttle_notifier);
+static BLOCKING_NOTIFIER_HEAD(cam_max_bw_notifier);
 
 
 static int mm_freq_notify(struct notifier_block *nb,
@@ -458,9 +456,6 @@ static void mm_apply_clk_for_all(u32 pm_qos_class, s32 src_mux_id,
 		freq[i] = set_freq_for_log(
 			freq[i], all_freqs[i]->current_step, i);
 	}
-	set_swpm_me_freq(all_freqs[3]->step_config[step].freq_step,
-			all_freqs[2]->step_config[step].freq_step,
-			all_freqs[1]->step_config[step].freq_step);
 	first_log = (pm_qos_class << 16) | step;
 
 #ifdef MMDVFS_MMP
@@ -472,11 +467,10 @@ static void mm_apply_clk_for_all(u32 pm_qos_class, s32 src_mux_id,
 		mmdvfs_mmp_events.ext_freq_change,
 		MMPROFILE_FLAG_PULSE, *((u32 *)&freq[0]), *((u32 *)&freq[4]));
 #endif
-	if (log_level & 1 << log_freq)
-		pr_notice(
-			"freq change:%u class:%u step:%u f0:%x f1:%x\n",
-			real_freq, pm_qos_class, step,
-			*((u32 *)&freq[0]), *((u32 *)&freq[4]));
+	pr_notice(
+		"freq change:%u class:%u step:%u f0:%x f1:%x\n",
+		real_freq, pm_qos_class, step,
+		*((u32 *)&freq[0]), *((u32 *)&freq[4]));
 }
 
 /* id is from SMI_LARB_L1ARB */
@@ -1198,7 +1192,7 @@ void mm_qos_update_all_request(struct plist_head *owner_list)
 	u64 profile;
 	u32 i = 0, larb_update = 0, mm_bw = 0;
 	s32 next_hrt_bw;
-	s32 cam_bw, larb_bw;
+	s32 cam_bw;
 	u32 larb_count = 0, larb_id = 0, larb_port_id = 0, larb_port_bw = 0;
 	u32 port_id = 0;
 	u32 comm, comm_port;
@@ -1385,13 +1379,9 @@ void mm_qos_update_all_request(struct plist_head *owner_list)
 #endif
 
 	/* update mm total bw */
-	for (i = 0; i < MAX_LARB_COUNT; i++) {
-		larb_bw = (larb_req[i].comm_port != SMI_COMM_MASTER_NUM) ?
+	for (i = 0; i < MAX_LARB_COUNT; i++)
+		mm_bw += (larb_req[i].comm_port != SMI_COMM_MASTER_NUM) ?
 			larb_req[i].total_bw_data : 0;
-		mm_bw += larb_bw;
-		if (log_level & 1 << log_qoslarb)
-			trace_mmqos__update_qoslarb(i, larb_bw);
-	}
 	pm_qos_update_request(&mm_bw_request, mm_bw);
 	if (log_level & 1 << log_bw)
 		pr_notice("config mm_bw=%d\n", mm_bw);
@@ -1475,6 +1465,22 @@ s32 mm_hrt_remove_bw_throttle_notifier(struct notifier_block *nb)
 }
 EXPORT_SYMBOL_GPL(mm_hrt_remove_bw_throttle_notifier);
 
+s32 add_cam_max_bw_notifier(struct notifier_block *nb)
+{
+	return blocking_notifier_chain_register(
+				&cam_max_bw_notifier,
+				nb);
+}
+EXPORT_SYMBOL_GPL(add_cam_max_bw_notifier);
+
+s32 remove_cam_max_bw_notifier(struct notifier_block *nb)
+{
+	return blocking_notifier_chain_unregister(
+				&cam_max_bw_notifier,
+				nb);
+}
+EXPORT_SYMBOL_GPL(remove_cam_max_bw_notifier);
+
 #ifdef HRT_MECHANISM
 static int notify_bw_throttle(void *data)
 {
@@ -1531,8 +1537,60 @@ static void delay_work_handler(struct work_struct *work)
 static DECLARE_DELAYED_WORK(g_delay_work, delay_work_handler);
 #endif /* HRT_MECHANISM */
 
+#ifdef SMI_TAL
+static int notify_bw_throttle(void *data)
+{
+	u64 start_jiffies = jiffies;
+
+	blocking_notifier_call_chain(&cam_max_bw_notifier,
+		camera_max_bw, NULL);
+
+	pr_notice("notify_time=%u\n",
+		jiffies_to_msecs(jiffies-start_jiffies));
+	return 0;
+}
+
+static u32 camera_overlap_bw;
+static void set_camera_max_bw(u32 occ_bw)
+{
+	struct task_struct *pKThread;
+
+	camera_max_bw = occ_bw;
+	wait_next_max_cam_bw_set = false;
+	pr_notice("set cam max occupy_bw=%d\n", occ_bw);
+	pKThread = kthread_run(notify_bw_throttle,
+		NULL, "notify bw throttle");
+}
+static void delay_work_handler(struct work_struct *work)
+{
+	set_camera_max_bw(camera_overlap_bw);
+}
+static DECLARE_DELAYED_WORK(g_delay_work, delay_work_handler);
+#endif /* SMI_TAL */
+
+
+#define MULTIPLY_W_DRAM_WEIGHT(value) ((value)*6/5) /* Write DRAM Weight*/
+
 void mmdvfs_set_max_camera_hrt_bw(u32 bw)
 {
+#ifdef SMI_TAL
+	u32 mw_hrt_bw;
+
+	cancel_delayed_work_sync(&g_delay_work);
+
+	mw_hrt_bw = MULTIPLY_W_DRAM_WEIGHT(bw);
+	if (mw_hrt_bw < camera_max_bw) {
+		camera_overlap_bw = mw_hrt_bw;
+		schedule_delayed_work(&g_delay_work, 2 * HZ);
+	} else {
+		camera_overlap_bw = 0;
+		set_camera_max_bw(mw_hrt_bw);
+	}
+
+	pr_notice("middleware set max camera hrt bw:%d\n", bw);
+
+#endif
+
 #ifdef HRT_MECHANISM
 	u32 mw_hrt_bw;
 
@@ -1644,7 +1702,6 @@ static void mmdvfs_get_larb_node(struct device *dev, u32 larb_id)
 	const __be32 *p;
 	struct property *prop;
 	char larb_name[MAX_LARB_NAME];
-	s32 result;
 
 	if (larb_id >= MAX_LARB_COUNT) {
 		pr_notice("larb_id:%d is over MAX_LARB_COUNT:%d\n",
@@ -1652,9 +1709,7 @@ static void mmdvfs_get_larb_node(struct device *dev, u32 larb_id)
 		return;
 	}
 
-	result = snprintf(larb_name, MAX_LARB_NAME, "larb%d", larb_id);
-	if (result < 0)
-		pr_notice("snprintf fail(%d) larb_id=%d\n", result, larb_id);
+	snprintf(larb_name, MAX_LARB_NAME, "larb%d", larb_id);
 	of_property_for_each_u32(dev->of_node, larb_name, prop, p, value) {
 		if (count >= MAX_PORT_COUNT) {
 			pr_notice("port size is over (%d)\n", MAX_PORT_COUNT);
@@ -1764,13 +1819,8 @@ static void mmdvfs_get_limit_step_node(struct device *dev,
 	for (i = 0; i < limit_size; i++) {
 		limit_config->limit_steps[i] = kcalloc(MAX_FREQ_STEP,
 			sizeof(*limit_config->limit_steps[i]), GFP_KERNEL);
-		result = snprintf(ext_name, sizeof(ext_name) - 1,
+		snprintf(ext_name, sizeof(ext_name) - 1,
 			"%s_limit_%d", freq_name, i);
-		if (result < 0) {
-			pr_notice("snprint fail(%d) freq=%s id=%d\n",
-				result, freq_name, i);
-			continue;
-		}
 		pr_notice("[limit]%s-%d: %s\n", freq_name, i, ext_name);
 		mmdvfs_get_step_array_node(dev, ext_name,
 			limit_config->limit_steps[i]);
@@ -2068,7 +2118,6 @@ static int __init mmdvfs_pmqos_late_init(void)
 	pr_notice("force flip step0 when late_init\n");
 #endif
 	total_hrt_bw = get_total_hrt_bw();
-	init_me_swpm();
 	return 0;
 }
 

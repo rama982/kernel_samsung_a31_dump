@@ -310,7 +310,9 @@ static unsigned int spm_output_wake_reason(unsigned int ex_flag
 		NULL, 0);
 #endif
 #endif
+#ifndef CONFIG_SEC_PM
 	log_irq_wakeup_reason(mtk_spm_get_irq_0());
+#endif
 
 	for (i = 0; i < IRQ_NUMBER; i++) {
 		if (spm_wakesrc_irqs[i].name == NULL ||

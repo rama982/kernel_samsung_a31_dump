@@ -1694,13 +1694,12 @@ int __pseudo_alloc_mva(struct m4u_client_t *client,
 					&base, &max, &owner,
 					NULL);
 		M4U_ERR(
-			"err %s, domain:%d(%s(%d):0x%lx~0x%lx) iova:0x%pad+0x%lx, pa=0x%pad, f:0x%x, n:%d-%d, sg_tab:0x%llx\n",
+			"err %s, domain:%d(%s(%d):0x%lx~0x%lx) iova:0x%pad+0x%lx, pa=0x%pad, f:0x%x, n:%d-%d\n",
 			iommu_get_port_name(port), domain,
 			iommu_get_port_name(owner),
 			owner, base, max,
 			&dma_addr, size, &paddr,
-			flags, table->nents, table->orig_nents,
-			(unsigned long long)sg_table);
+			flags, table->nents, table->orig_nents);
 		__m4u_dump_pgtable(NULL, 1, true, 0);
 		if (owner < 0)
 			m4u_find_max_port_size(base, max, &err_port, &err_size);
@@ -1768,9 +1767,6 @@ ERR_EXIT:
 		ret = -EINVAL;
 
 	if (table && free_table) {
-		M4U_ERR("nent:%u--%u, len:0x%lx\n",
-			table->nents, table->orig_nents,
-			(unsigned long)sg_dma_len(table->sgl));/* debug memory corruption */
 		sg_free_table(table);
 		kfree(table);
 	}
@@ -2730,7 +2726,7 @@ out:
 }
 #endif
 
-int m4u_sec_init(void)
+static int m4u_sec_init_nolock(void)
 {
 	int ret;
 #if defined(CONFIG_TRUSTONIC_TEE_SUPPORT) && \
@@ -2800,6 +2796,16 @@ m4u_sec_reinit:
 	/* don't deinit ta because of multiple init operation */
 
 	return 0;
+}
+
+int m4u_sec_init(void)
+{
+	int ret = 0;
+
+	mutex_lock(&gM4u_sec_init);
+	ret = m4u_sec_init_nolock();
+	mutex_unlock(&gM4u_sec_init);
+	return ret;
 }
 
 int m4u_config_port_tee(struct M4U_PORT_STRUCT *pM4uPort)	/* native */
@@ -3292,9 +3298,7 @@ static long pseudo_ioctl(struct file *filp,
 			M4U_MSG(
 				"MTK M4U ioctl : MTK_M4U_T_SEC_INIT command!! 0x%x\n",
 					cmd);
-			mutex_lock(&gM4u_sec_init);
 			ret = m4u_sec_init();
-			mutex_unlock(&gM4u_sec_init);
 		}
 		break;
 #endif
@@ -3444,9 +3448,7 @@ long pseudo_compat_ioctl(struct file *filp,
 			M4U_MSG(
 				"MTK_M4U_T_SEC_INIT command!! 0x%x\n",
 					cmd);
-			mutex_lock(&gM4u_sec_init);
 			ret = m4u_sec_init();
-			mutex_unlock(&gM4u_sec_init);
 		}
 		break;
 #endif

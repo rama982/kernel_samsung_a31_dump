@@ -55,6 +55,11 @@ bool pmic_is_battery_exist(void)
 	return is_bat_exist;
 #endif
 
+	/* Battery always present */
+	pr_err("pmic_is_battery_exist : force return as true\n");
+	is_bat_exist = true;
+	return is_bat_exist;
+
 #if defined(CONFIG_MTK_PMIC_CHIP_MT6358) \
 || defined(CONFIG_MTK_PMIC_CHIP_MT6359) \
 || defined(CONFIG_MTK_PMIC_CHIP_MT6359P)

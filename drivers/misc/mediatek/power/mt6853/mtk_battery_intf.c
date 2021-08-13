@@ -47,6 +47,11 @@ signed int battery_get_soc(void)
 	return 50;
 }
 
+signed int battery_get_precise_soc(void)
+{
+	return 500;
+}
+
 signed int battery_get_uisoc(void)
 {
 	int boot_mode = get_boot_mode();
@@ -58,6 +63,19 @@ signed int battery_get_uisoc(void)
 		return 75;
 
 	return 50;
+}
+
+signed int battery_get_precise_uisoc(void)
+{
+	int boot_mode = get_boot_mode();
+
+	if ((boot_mode == META_BOOT) ||
+		(boot_mode == ADVMETA_BOOT) ||
+		(boot_mode == FACTORY_BOOT) ||
+		(boot_mode == ATE_FACTORY_BOOT))
+		return 750;
+
+	return 500;
 }
 
 signed int battery_get_bat_temperature(void)
@@ -111,6 +129,11 @@ signed int battery_get_soc(void)
 	return get_mtk_battery()->soc;
 }
 
+signed int battery_get_precise_soc(void)
+{
+	return get_mtk_battery()->precise_soc;
+}
+
 signed int battery_get_uisoc(void)
 {
 	int boot_mode = get_boot_mode();
@@ -122,6 +145,19 @@ signed int battery_get_uisoc(void)
 		return 75;
 
 	return get_mtk_battery()->ui_soc;
+}
+
+signed int battery_get_precise_uisoc(void)
+{
+	int boot_mode = get_boot_mode();
+
+	if ((boot_mode == META_BOOT) ||
+		(boot_mode == ADVMETA_BOOT) ||
+		(boot_mode == FACTORY_BOOT) ||
+		(boot_mode == ATE_FACTORY_BOOT))
+		return 750;
+
+	return get_mtk_battery()->precise_ui_soc;
 }
 
 signed int battery_get_bat_temperature(void)

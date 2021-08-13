@@ -278,6 +278,25 @@ extern void mtk_ccci_ccb_info_peek(void);
 #define CCCI_IOC_CCB_CTRL_INFO			\
 	_IOWR(CCCI_IOC_MAGIC, 71, struct ccb_ctrl_info)
 
+/* for user space ccci mdinit user */
+#define CCCI_IOC_GET_MDINIT_KILLED      \
+	_IOR(CCCI_IOC_MAGIC, 72, unsigned int)
+
+
+/* modem log */
+#define CCCI_IOC_ENTER_UPLOAD		\
+	_IO(CCCI_IOC_MAGIC, 73)
+
+#define CCCI_IOC_DRV_ENTER_UPLOAD	\
+	_IO(CCCI_IOC_MAGIC, 74) /* modem log for s */
+
+#define CCCI_IOC_LOG_LVL	\
+	_IOW(CCCI_IOC_MAGIC, 75, unsigned int) /* modem log for s */
+
+/* for meta cancel poll */
+#define CCCI_IOC_SMEM_POLL_EXIT	\
+	_IO(CCCI_IOC_MAGIC, 76) /* only for meta mode */
+
 #define CCCI_IOC_SET_HEADER			\
 	_IO(CCCI_IOC_MAGIC,  112) /* emcs_va */
 #define CCCI_IOC_CLR_HEADER			\
@@ -487,13 +506,14 @@ enum CCCI_CH {
 	CCCI_UDC_RX			= 177,
 	CCCI_UDC_TX			= 178,
 
-	CCCI_MIPI_CHANNEL_RX	= 179,
-	CCCI_MIPI_CHANNEL_TX	= 180,
-
 	CCCI_TCHE_RX			= 181,
 	CCCI_TCHE_TX			= 182,
 	CCCI_DISP_RX			= 183,
 	CCCI_DISP_TX			= 184,
+
+	CCCI_CIQ_RX			= 185,
+	CCCI_CIQ_TX			= 186,
+
 	CCCI_WIFI_RX			= 187,
 	CCCI_WIFI_TX			= 188,
 	CCCI_VTS_RX			= 189,
@@ -502,21 +522,19 @@ enum CCCI_CH {
 	CCCI_IKERAW_RX			= 191,
 	CCCI_IKERAW_TX			= 192,
 
+	CCCI_RIL_IPC0_RX		= 193,
+	CCCI_RIL_IPC0_TX		= 194,
+	CCCI_RIL_IPC1_RX		= 195,
+	CCCI_RIL_IPC1_TX		= 196,
+	CCCI_VT_CTL_RX		= 197,
+	CCCI_VT_CTL_TX			= 198,
+
 	CCCI_MD_DIRC_RX			= 200,
 	CCCI_MD_DIRC_TX			= 201,
 	CCCI_TIME_RX			= 202,
 	CCCI_TIME_TX			= 203,
 	CCCI_GARB_RX			= 204,
 	CCCI_GARB_TX			= 205,
-
-	CCCI_EPDG1_RX			= 236,
-	CCCI_EPDG1_TX			= 237,
-	CCCI_EPDG2_RX			= 238,
-	CCCI_EPDG2_TX			= 239,
-	CCCI_EPDG3_RX			= 240,
-	CCCI_EPDG3_TX			= 241,
-	CCCI_EPDG4_RX			= 242,
-	CCCI_EPDG4_TX			= 243,
 
 	CCCI_C2K_PPP_DATA, /* data ch for c2k */
 
@@ -620,4 +638,5 @@ int hif_empty_query(int qno);
 #ifdef FEATURE_SCP_CCCI_SUPPORT
 extern void fsm_scp_init0(void);
 #endif
+void drv_tri_panic_by_lvl(int md_id);
 #endif	/* __CCCI_CORE_H__ */

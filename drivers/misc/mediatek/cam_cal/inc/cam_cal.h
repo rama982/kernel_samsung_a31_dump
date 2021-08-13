@@ -40,6 +40,9 @@
 /*CAM_CAL set sensor info*/
 #define CAM_CALIOC_S_SENSOR_INFO \
 	_IOW(CAM_CALAGIC, 10, struct CAM_CAL_SENSOR_INFO)
+/*CAM_CAL get cal data*/
+#define CAM_CALIOC_G_SENSOR_INFO \
+	_IOWR(CAM_CALAGIC, 15, struct CAM_CAL_SENSOR_INFO)
 
 #ifdef CONFIG_COMPAT
 #define COMPAT_CAM_CALIOC_S_WRITE \

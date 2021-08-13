@@ -537,19 +537,36 @@ long port_smem_ioctl(struct port_t *port, unsigned int cmd, unsigned long arg)
 		}
 		memset(&debug_out, 0, sizeof(debug_out));
 		if (debug_in.buffer_id == 0) {
+			if (debug_in.page_id >= (ccb_configs[0].ul_buff_size /
+				ccb_configs[0].ul_page_size)) {
+				CCCI_ERROR_LOG(md_id, TAG,
+					"Invalid page ID %d for buffer 0 !!\n", debug_in.page_id);
+				ret = -EIO;
+				break;
+			}
 			ptr = (char *)ccb_dhl->base_ap_view_vir +
 			ccb_configs[0].dl_buff_size +
 			debug_in.page_id*ccb_configs[0].ul_page_size + 8;
 			debug_out.value = *ptr;
 		} else if (debug_in.buffer_id == 1) {
+			if (debug_in.page_id >= (ccb_configs[1].ul_buff_size /
+				ccb_configs[1].ul_page_size)) {
+				CCCI_ERROR_LOG(md_id, TAG,
+					"Invalid page ID %d for buffer 0 !!\n", debug_in.page_id);
+				ret = -EIO;
+				break;
+			}
 			ptr  = (char *)ccb_dhl->base_ap_view_vir +
 			ccb_configs[0].dl_buff_size +
 			ccb_configs[0].ul_buff_size +
 			ccb_configs[1].dl_buff_size +
 			debug_in.page_id*ccb_configs[1].ul_page_size + 8;
 			debug_out.value = *ptr;
-		} else
+		} else {
 			CCCI_ERROR_LOG(md_id, TAG, "wrong buffer num\n");
+			ret = -EIO;
+			break;
+		}
 
 		if (copy_to_user((void __user *)arg, &debug_out,
 			sizeof(struct ccci_ccb_debug)))
@@ -620,6 +637,12 @@ long port_smem_ioctl(struct port_t *port, unsigned int cmd, unsigned long arg)
 		smem_port = (struct ccci_smem_port *)port->private_data;
 		ret = put_user((unsigned int)smem_port->state,
 				(unsigned int __user *)arg);
+		break;
+	case CCCI_IOC_SMEM_POLL_EXIT:
+		CCCI_NORMAL_LOG(md_id, TAG,
+			"%s:into CCCI_IOC_SMEM_POLL_EXIT\n",
+			__func__);
+		port_smem_rx_wakeup(port);
 		break;
 	default:
 		ret = -1;

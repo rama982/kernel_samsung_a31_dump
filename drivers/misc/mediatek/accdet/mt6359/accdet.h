@@ -46,7 +46,7 @@
 #define PMIC_ACCDET_KERNEL         1
 #define PMIC_ACCDET_CTP            0
 
-#define PMIC_ACCDET_DEBUG          1
+#define PMIC_ACCDET_DEBUG          0
 #define PMIC_ACCDET_SUPPORT
 
 #define NO_KEY	(0x0)
@@ -152,6 +152,7 @@ struct head_dts_data {
 	unsigned int moisture_detect_enable;
 	unsigned int eint_detect_mode;
 	unsigned int eint_use_ext_res;
+	unsigned int eint_comp_vth;
 	unsigned int moisture_detect_mode;
 	unsigned int moisture_comp_vth;
 	unsigned int moisture_comp_vref2;

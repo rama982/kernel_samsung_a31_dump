@@ -11,6 +11,13 @@
 # GNU General Public License for more details.
 #
 
+ifneq ($(CONFIG_MTK_GAUGE_VERSION),30)
+ccflags-$(CONFIG_USB_MTK_HDRC)  += -DMTK_SW_WORKAROUND=1
+endif
+ifdef CONFIG_MFD_S2MU005
+ccflags-$(CONFIG_USB_MTK_HDRC)  += -DMTK_SW_WORKAROUND=1
+endif
+
 #
 # for USB OTG silicon based on Mentor Graphics INVENTRA designs
 #

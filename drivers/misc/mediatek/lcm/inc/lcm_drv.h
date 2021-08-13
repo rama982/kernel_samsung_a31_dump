@@ -18,6 +18,13 @@
 #include <linux/platform_device.h>
 #include <linux/regulator/consumer.h>
 
+#if defined(CONFIG_SMCDSD_PANEL)
+#include "smcdsd_notify.h"
+#include "smcdsd_abd.h"
+extern unsigned char rx_offset;
+extern unsigned char data_type;
+#endif
+
 #ifndef ARY_SIZE
 #define ARY_SIZE(x) (sizeof((x)) / sizeof((x[0])))
 #endif
@@ -94,13 +101,10 @@ enum LCM_IOCTL {
 	LCM_IOCTL_NULL = 0,
 };
 
-
-
 enum LCM_Send_Cmd_Mode {
 	LCM_SEND_IN_CMD = 0,
 	LCM_SEND_IN_VDO
 };
-
 
 /* DBI related enumerations */
 
@@ -534,7 +538,6 @@ struct dynamic_fps_info {
 	/*unsigned int idle_check_interval;*//*ms*/
 };
 
-
 /*DynFPS*/
 enum DynFPS_LEVEL {
 	DFPS_LEVEL0 = 0,
@@ -588,7 +591,6 @@ struct dfps_info {
 	/*real fps during active*/
 	unsigned int vact_timing_fps_dyn;
 };
-
 
 struct LCM_DSI_PARAMS {
 	enum LCM_DSI_MODE_CON mode;
@@ -738,7 +740,6 @@ struct LCM_DSI_PARAMS {
 	/*for ARR*/
 	unsigned int dynamic_fps_levels;
 	struct dynamic_fps_info dynamic_fps_table[DYNAMIC_FPS_LEVELS];
-
 #ifdef CONFIG_MTK_HIGH_FRAME_RATE
 	/****DynFPS start****/
 	unsigned int dfps_enable;
@@ -797,6 +798,12 @@ struct LCM_PARAMS {
 #ifdef CONFIG_MTK_HIGH_FRAME_RATE
 	enum LCM_Send_Cmd_Mode sendmode;
 #endif
+	/* HBM: High Backlight Mode */
+//	unsigned int hbm_en_time;
+//	unsigned int hbm_dis_time;
+
+	unsigned int hbm_enable_wait_frame;		// add samsung
+	unsigned int hbm_disable_wait_frame;
 };
 
 
@@ -895,8 +902,8 @@ struct LCM_DTS {
 struct LCM_setting_table_V3 {
 	unsigned char id;
 	unsigned char cmd;
-	unsigned char count;
-	unsigned char para_list[128];
+	unsigned int count;
+	unsigned char para_list[512];
 };
 
 /*
@@ -931,11 +938,11 @@ struct LCM_UTIL_FUNCS {
 
 	void (*dsi_set_cmdq_V3)(struct LCM_setting_table_V3 *para_list,
 			unsigned int size, unsigned char force_update);
-	void (*dsi_set_cmdq_V2)(unsigned int cmd, unsigned char count,
+	void (*dsi_set_cmdq_V2)(unsigned int cmd, unsigned int count,
 			unsigned char *para_list, unsigned char force_update);
 	void (*dsi_set_cmdq)(unsigned int *pdata, unsigned int queue_size,
 			unsigned char force_update);
-	void (*dsi_set_null)(unsigned int cmd, unsigned char count,
+	void (*dsi_set_null)(unsigned int cmd, unsigned int count,
 			unsigned char *para_list, unsigned char force_update);
 	void (*dsi_write_cmd)(unsigned int cmd);
 	void (*dsi_write_regs)(unsigned int addr, unsigned int *para,
@@ -955,11 +962,11 @@ struct LCM_UTIL_FUNCS {
 	void (*dsi_set_cmdq_V11)(void *cmdq, unsigned int *pdata,
 			unsigned int queue_size, unsigned char force_update);
 	void (*dsi_set_cmdq_V22)(void *cmdq, unsigned int cmd,
-			unsigned char count, unsigned char *para_list,
+			unsigned int count, unsigned char *para_list,
 			unsigned char force_update);
 	void (*dsi_swap_port)(int swap);
 	void (*dsi_set_cmdq_V23)(void *cmdq, unsigned int cmd,
-		unsigned char count, unsigned char *para_list,
+		unsigned int count, unsigned char *para_list,
 		unsigned char force_update);	/* dual */
 	void (*mipi_dsi_cmds_tx)(void *cmdq, struct dsi_cmd_desc *cmds);
 	unsigned int (*mipi_dsi_cmds_rx)(char *out,
@@ -967,9 +974,8 @@ struct LCM_UTIL_FUNCS {
 	/*Dynfps*/
 	void (*dsi_dynfps_send_cmd)(
 		void *cmdq, unsigned int cmd,
-		unsigned char count, unsigned char *para_list,
+		unsigned int count, unsigned char *para_list,
 		unsigned char force_update, enum LCM_Send_Cmd_Mode sendmode);
-
 };
 enum LCM_DRV_IOCTL_CMD {
 	LCM_DRV_IOCTL_ENABLE_CMD_MODE = 0x100,
@@ -989,6 +995,12 @@ struct LCM_DRIVER {
 	void (*suspend_power)(void);
 	void (*resume_power)(void);
 
+#if defined(CONFIG_SMCDSD_PANEL)
+	void (*cmd_q)(unsigned int enable);
+	void (*power_enable)(unsigned int enable);
+	void (*disable)(void);
+#endif
+
 	void (*update)(unsigned int x, unsigned int y, unsigned int width,
 			unsigned int height);
 	unsigned int (*compare_id)(void);
@@ -998,6 +1010,12 @@ struct LCM_DRIVER {
 	/* /////////////////////////CABC backlight related function */
 	void (*set_backlight)(unsigned int level);
 	void (*set_backlight_cmdq)(void *handle, unsigned int level);
+	bool (*get_hbm_state)(void);
+	bool (*get_hbm_wait)(void);
+	bool (*set_hbm_wait)(bool wait);
+	bool (*set_hbm_cmdq)(bool en, void *qhandle);
+	bool (*framedone_notify)(void);
+	bool (*lcm_path_lock)(bool en);
 	void (*set_pwm)(unsigned int divider);
 	unsigned int (*get_pwm)(unsigned int divider);
 	void (*set_backlight_mode)(unsigned int mode);

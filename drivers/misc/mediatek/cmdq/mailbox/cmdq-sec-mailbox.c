@@ -218,7 +218,7 @@ static inline void cmdq_mmp_init(struct cmdq_sec *cmdq)
 
 	len = snprintf(name, sizeof(name), "cmdq_sec_%hhu", cmdq->hwid);
 	if (len >= sizeof(name))
-		cmdq_log("len:%d over name size:%d", len, sizeof(name));
+		cmdq_log("len:%d over name size:%zu", len, sizeof(name));
 
 	cmdq->mmp.cmdq_root = mmprofile_register_event(MMP_ROOT_EVENT, "CMDQ");
 	cmdq->mmp.cmdq = mmprofile_register_event(cmdq->mmp.cmdq_root, name);
@@ -691,42 +691,29 @@ static s32 cmdq_sec_session_init(struct cmdq_sec_context *context)
 		context->state = IWC_CONTEXT_INITED;
 	case IWC_CONTEXT_INITED:
 #ifdef CMDQ_GP_SUPPORT
-		if (!context->iwc_msg) {
+		if (!context->iwc_msg ||
+			!context->iwc_ex1 || !context->iwc_ex2) {
 			err = cmdq_sec_allocate_wsm(&context->tee,
-				&context->iwc_msg, CMDQ_IWC_MSG,
-				sizeof(struct iwcCmdqMessage_t));
-			if (err)
-				break;
-		}
-		if (!context->iwc_ex1) {
-			err = cmdq_sec_allocate_wsm(&context->tee,
-				&context->iwc_ex1, CMDQ_IWC_MSG1,
-				sizeof(struct iwcCmdqMessageEx_t));
-			if (err)
-				break;
-		}
-		if (!context->iwc_ex2) {
-			err = cmdq_sec_allocate_wsm(&context->tee,
-				&context->iwc_ex2, CMDQ_IWC_MSG2,
+				&context->iwc_msg,
+				sizeof(struct iwcCmdqMessage_t),
+				&context->iwc_ex1,
+				sizeof(struct iwcCmdqMessageEx_t),
+				&context->iwc_ex2,
 				sizeof(struct iwcCmdqMessageEx2_t));
 			if (err)
 				break;
 		}
 #endif
-
 #ifdef CMDQ_SECURE_MTEE_SUPPORT
-		if (!context->mtee_iwc_msg ||
-			!context->mtee_iwc_ex1 || !context->mtee_iwc_ex2) {
-			err = cmdq_sec_mtee_allocate_wsm(&context->mtee,
-				&context->mtee_iwc_msg,
-				sizeof(struct iwcCmdqMessage_t),
-				&context->mtee_iwc_ex1,
-				sizeof(struct iwcCmdqMessageEx_t),
-				&context->mtee_iwc_ex2,
-				sizeof(struct iwcCmdqMessageEx2_t));
-			if (err)
-				break;
-		}
+		err = cmdq_sec_mtee_allocate_wsm(&context->mtee,
+			&context->mtee_iwc_msg,
+			sizeof(struct iwcCmdqMessage_t),
+			&context->mtee_iwc_ex1,
+			sizeof(struct iwcCmdqMessageEx_t),
+			&context->mtee_iwc_ex2,
+			sizeof(struct iwcCmdqMessageEx2_t));
+		if (err)
+			break;
 #endif
 
 		context->state = IWC_WSM_ALLOCATED;
@@ -828,6 +815,8 @@ static s32 cmdq_sec_fill_iwc_msg(struct cmdq_sec_context *context,
 	iwc_msg->command.metadata.enginesNeedDAPC = data->enginesNeedDAPC;
 	iwc_msg->command.metadata.enginesNeedPortSecurity =
 		data->enginesNeedPortSecurity;
+	iwc_msg->command.metadata.enginesDisableDAPC = 0;
+	iwc_msg->command.metadata.enginesDisablePortSecurity = 0;
 	iwc_msg->command.hNormalTask = (unsigned long)task->pkt;
 
 	iwc_msg->metaex_type = data->client_meta_type;
@@ -945,7 +934,7 @@ static s32 cmdq_sec_session_send(struct cmdq_sec_context *context,
 	if (!mtee) {
 #ifdef CMDQ_GP_SUPPORT
 		err = cmdq_sec_execute_session(&context->tee, iwc_cmd, 3000,
-			mem_ex1, mem_ex2);
+		mem_ex1, mem_ex2);
 #endif
 	}
 #ifdef CMDQ_SECURE_MTEE_SUPPORT
@@ -1119,7 +1108,7 @@ cmdq_sec_task_submit(struct cmdq_sec *cmdq, struct cmdq_sec_task *task,
 		/* do m4u sec init */
 		if (atomic_cmpxchg(&m4u_init, 0, 1) == 0) {
 			m4u_sec_init();
-			cmdq_log("[SEC] M4U_sec_init is called\n");
+			cmdq_msg("[SEC][task] M4U_sec_init is called\n");
 		}
 #endif
 
@@ -1209,7 +1198,7 @@ void cmdq_sec_mbox_switch_normal(struct cmdq_client *cl)
 	struct cmdq_sec_thread *thread =
 		(struct cmdq_sec_thread *)cl->chan->con_priv;
 
-	cmdq_sec_resume(cmdq->mbox.dev);
+	WARN_ON(clk_prepare(cmdq->clock) < 0);
 	cmdq_sec_clk_enable(cmdq);
 	cmdq_log("[ IN] %s: cl:%p cmdq:%p thrd:%p idx:%u\n",
 		__func__, cl, cmdq, thread, thread->idx);
@@ -1223,7 +1212,7 @@ void cmdq_sec_mbox_switch_normal(struct cmdq_client *cl)
 	cmdq_log("[OUT] %s: cl:%p cmdq:%p thrd:%p idx:%u\n",
 		__func__, cl, cmdq, thread, thread->idx);
 	cmdq_sec_clk_disable(cmdq);
-	cmdq_sec_suspend(cmdq->mbox.dev);
+	clk_unprepare(cmdq->clock);
 #endif
 }
 EXPORT_SYMBOL(cmdq_sec_mbox_switch_normal);
@@ -1445,7 +1434,7 @@ static int cmdq_sec_mbox_startup(struct mbox_chan *chan)
 	INIT_WORK(&thread->timeout_work, cmdq_sec_task_timeout_work);
 	len = snprintf(name, sizeof(name), "task_exec_wq_%u", thread->idx);
 	if (len >= sizeof(name))
-		cmdq_log("len:%d over name size:%d", len, sizeof(name));
+		cmdq_log("len:%d over name size:%zu", len, sizeof(name));
 
 	thread->task_exec_wq = create_singlethread_workqueue(name);
 	thread->occupied = true;
@@ -1624,7 +1613,6 @@ static int __init cmdq_sec_init(void)
 	return err;
 }
 
-#ifdef CMDQ_GP_SUPPORT
 static s32 cmdq_sec_late_init_wsm(void *data)
 {
 	struct cmdq_sec *cmdq;
@@ -1636,8 +1624,6 @@ static s32 cmdq_sec_late_init_wsm(void *data)
 		cmdq = g_cmdq[i];
 		if (!cmdq)
 			break;
-		cmdq_msg("g_cmdq_cnt:%u g_cmdq:%u pa:%pa",
-			g_cmdq_cnt, i, &cmdq->base_pa);
 
 		if (!cmdq->context) {
 			context = kzalloc(sizeof(*cmdq->context),
@@ -1650,7 +1636,34 @@ static s32 cmdq_sec_late_init_wsm(void *data)
 			cmdq->context->state = IWC_INIT;
 			cmdq->context->tgid = current->tgid;
 		}
+		cmdq_msg("g_cmdq_cnt:%u g_cmdq:%u pa:%pa context:%p",
+			g_cmdq_cnt, i, &cmdq->base_pa, cmdq->context);
 
+#ifdef CMDQ_SECURE_MTEE_SUPPORT
+		cmdq->context->mtee_iwc_msg =
+			kzalloc(sizeof(struct iwcCmdqMessage_t), GFP_KERNEL);
+		if (!cmdq->context->mtee_iwc_msg)
+			return -ENOMEM;
+
+		cmdq->context->mtee_iwc_ex1 =
+			kzalloc(sizeof(struct iwcCmdqMessageEx_t), GFP_KERNEL);
+		if (!cmdq->context->mtee_iwc_ex1)
+			return -ENOMEM;
+
+		cmdq->context->mtee_iwc_ex2 =
+			kzalloc(sizeof(struct iwcCmdqMessageEx2_t), GFP_KERNEL);
+		if (!cmdq->context->mtee_iwc_ex2)
+			return -ENOMEM;
+
+		cmdq_msg("mtee_iwc:%p(%#x) ex1:%p(%#x) ex3:%p(%#x)",
+			cmdq->context->mtee_iwc_msg,
+			sizeof(struct iwcCmdqMessage_t),
+			cmdq->context->mtee_iwc_ex1,
+			sizeof(struct iwcCmdqMessageEx_t),
+			cmdq->context->mtee_iwc_ex2,
+			sizeof(struct iwcCmdqMessageEx2_t));
+#endif
+#ifdef CMDQ_GP_SUPPORT
 		mutex_lock(&cmdq->exec_lock);
 		if (cmdq->context->state == IWC_INIT)
 			cmdq_sec_setup_tee_context_base(cmdq->context);
@@ -1662,6 +1675,7 @@ static s32 cmdq_sec_late_init_wsm(void *data)
 			cmdq_err("session init failed:%d", err);
 			continue;
 		}
+#endif
 	} while (++i < g_cmdq_cnt);
 	return err;
 }
@@ -1676,6 +1690,5 @@ static int __init cmdq_sec_late_init(void)
 	return PTR_ERR(kthr);
 }
 late_initcall(cmdq_sec_late_init);
-#endif
 
 arch_initcall(cmdq_sec_init);

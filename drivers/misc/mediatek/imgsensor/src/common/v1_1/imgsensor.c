@@ -41,6 +41,7 @@
 #include "kd_imgsensor_define.h"
 #include "kd_camera_feature.h"
 #include "kd_imgsensor_errcode.h"
+#include "kd_imgsensor_sysfs_adapter.h"
 
 #include "imgsensor_cfg_table.h"
 #include "imgsensor_sensor_list.h"
@@ -51,6 +52,7 @@
 #include "imgsensor_oc.h"
 #endif
 #include "imgsensor.h"
+#include "imgsensor_sysfs.h"
 
 #if defined(CONFIG_MTK_CAM_SECURE_I2C)
 #include "imgsensor_ca.h"
@@ -80,7 +82,7 @@ void IMGSENSOR_PROFILE(struct timeval *ptv, char *tag)
 	time_interval =
 	(tv.tv_sec - ptv->tv_sec) * 1000000 + (tv.tv_usec - ptv->tv_usec);
 
-	PK_DBG("[%s]Profile = %lu us\n", tag, time_interval);
+	PK_INFO("[%s]Profile = %lu us\n", tag, time_interval);
 }
 
 #else
@@ -237,7 +239,9 @@ MINT32 imgsensor_sensor_open(struct IMGSENSOR_SENSOR *psensor)
 
 		IMGSENSOR_PROFILE(&psensor_inst->profile_time, "SensorOpen");
 	}
-
+#ifdef IMGSENSOR_HW_PARAM
+	update_curr_sensor_pos(psensor->inst.sensor_idx);
+#endif
 	IMGSENSOR_FUNCTION_EXIT();
 
 	return ret;
@@ -566,13 +570,118 @@ int imgsensor_set_driver(struct IMGSENSOR_SENSOR *psensor)
 	struct IMGSENSOR             *pimgsensor   = &gimgsensor;
 	struct IMGSENSOR_SENSOR_INST *psensor_inst = &psensor->inst;
 
+	static int max_num_of_config_sensor;
+	static int max_num_of_config_2nd_sensor;
+	static int searched_sensor_list_num;
+	static bool init_flag_search_list = false;
+
+	char *config_sensor_name[] = {
+		CONFIG_CAMERA_SENSOR0,
+		CONFIG_CAMERA_SENSOR1,
+		CONFIG_CAMERA_SENSOR2,
+		CONFIG_CAMERA_SENSOR3,
+		CONFIG_CAMERA_SENSOR4,
+		CONFIG_CAMERA_SENSOR5,
+		NULL,
+		NULL,
+		NULL,
+		NULL, //9
+	};
+
+	//for using two sensor of same position
+	char *config_2nd_sensor_name[] = {
+		CONFIG_CAMERA_SENSOR0_2,
+		CONFIG_CAMERA_SENSOR1_2,
+		CONFIG_CAMERA_SENSOR2_2,
+		CONFIG_CAMERA_SENSOR3_2,
+		CONFIG_CAMERA_SENSOR4_2,
+		CONFIG_CAMERA_SENSOR5_2,
+		NULL,
+		NULL,
+		NULL,
+		NULL, //9_2
+	};
+
+	if (psensor_inst == NULL) {
+		return ret;
+	}
+
 	imgsensor_mutex_init(psensor_inst);
 	imgsensor_i2c_init(&psensor_inst->i2c_cfg,
 	imgsensor_custom_config[
 	(unsigned int)psensor_inst->sensor_idx].i2c_dev);
 	imgsensor_i2c_filter_msg(&psensor_inst->i2c_cfg, true);
+#if 1
+	// for using general variant
+	if(!init_flag_search_list) {
+		max_num_of_config_sensor = ARRAY_SIZE(config_sensor_name);
+		max_num_of_config_2nd_sensor = ARRAY_SIZE(config_2nd_sensor_name);
 
-	while (i < MAX_NUM_OF_SUPPORT_SENSOR && pimgsensor->psensor_list[i]) {
+		init_flag_search_list = true;
+	}
+
+	//set default sensor
+	if ((psensor_inst->sensor_idx < max_num_of_config_sensor) &&
+		(config_sensor_name[psensor_inst->sensor_idx] != NULL) &&
+		(config_sensor_name[psensor_inst->sensor_idx][0] != '\0')) {
+
+		//search sensor
+		for (i = 0; i < MAX_NUM_OF_SUPPORT_SENSOR; i++) {
+			if (pimgsensor->psensor_list[i]->init != NULL &&
+				!strcmp(config_sensor_name[psensor_inst->sensor_idx], pimgsensor->psensor_list[i]->name)) {
+				searched_sensor_list_num = i;
+				pimgsensor->psensor_list[i]->init(&psensor->pfunc);
+				/* get sensor name */
+				psensor_inst->psensor_list = pimgsensor->psensor_list[i];
+#ifdef IMGSENSOR_LEGACY_COMPAT
+				psensor_inst->status.arch = psensor->pfunc->arch;
+#endif
+				PK_INFO("searched sensor(idx[%d], name: %s)\n",
+						psensor_inst->sensor_idx, psensor_inst->psensor_list->name);
+
+				ret  = 0;
+				break;
+			}
+		}
+	} else {
+		PK_INFO("no searched sensor(idx[%d])\n", psensor_inst->sensor_idx);
+	}
+
+	//search 2nd sensor
+	if ((psensor_inst->sensor_idx < max_num_of_config_2nd_sensor) &&
+		(config_2nd_sensor_name[psensor_inst->sensor_idx] != NULL) &&
+		(config_2nd_sensor_name[psensor_inst->sensor_idx][0] != '\0')) {
+
+		//search sensor
+		for (i = 0; i < MAX_NUM_OF_SUPPORT_SENSOR; i++) {
+			if (pimgsensor->psensor_list[i]->init != NULL &&
+				!strcmp(config_2nd_sensor_name[psensor_inst->sensor_idx], pimgsensor->psensor_list[i]->name)) {
+
+				pimgsensor->psensor_list[i]->init(&psensor->pfunc);
+				/* get sensor name */
+				psensor_inst->psensor_list = pimgsensor->psensor_list[i];
+
+				//olny check 2nd sensor, check alive
+				if (!imgsensor_check_is_alive(psensor)) {
+					PK_INFO("searched 2nd sensor(idx[%d], name: %s)\n",
+							psensor_inst->sensor_idx, psensor_inst->psensor_list->name);
+					ret = 0;
+				} else {
+					//set default sensor(searched 1st sensor)
+					pimgsensor->psensor_list[searched_sensor_list_num]->init(&psensor->pfunc);
+					psensor_inst->psensor_list = pimgsensor->psensor_list[searched_sensor_list_num];
+					PK_INFO("no searched 2nd sensor(idx[%d])\n", psensor_inst->sensor_idx);
+				}
+#ifdef IMGSENSOR_LEGACY_COMPAT
+				psensor_inst->status.arch = psensor->pfunc->arch;
+#endif
+				break;
+			}
+		}
+	}
+#else
+	// MTK codes
+	while (pimgsensor->psensor_list[i] && i < MAX_NUM_OF_SUPPORT_SENSOR) {
 		if (pimgsensor->psensor_list[i]->init) {
 			pimgsensor->psensor_list[i]->init(&psensor->pfunc);
 
@@ -605,7 +714,7 @@ int imgsensor_set_driver(struct IMGSENSOR_SENSOR *psensor)
 
 		i++;
 	}
-
+#endif
 	imgsensor_i2c_filter_msg(&psensor_inst->i2c_cfg, false);
 
 	return ret;
@@ -696,7 +805,7 @@ static inline int adopt_CAMERA_HW_GetInfo2(void *pBuf)
 	PK_DBG("[%s]Entry%d\n", __func__, pSensorGetInfo->SensorId);
 
 	for (i = MSDK_SCENARIO_ID_CAMERA_PREVIEW;
-			i < MSDK_SCENARIO_ID_CUSTOM15;
+			i < MSDK_SCENARIO_ID_CUSTOM5;
 			i++) {
 		imgsensor_sensor_get_info(psensor, i, &info, &config);
 
@@ -1662,7 +1771,6 @@ static inline int adopt_CAMERA_HW_FeatureControl(void *pBuf)
 		}
 		break;
 	case SENSOR_FEATURE_GET_PDAF_DATA:
-	case SENSOR_FEATURE_GET_4CELL_DATA:
 		{
 #define PDAF_DATA_SIZE 4096
 			char *pPdaf_data = NULL;
@@ -1708,6 +1816,76 @@ static inline int adopt_CAMERA_HW_FeatureControl(void *pBuf)
 			*(pFeaturePara_64 + 1) = (uintptr_t) usr_ptr;
 		}
 		break;
+
+	case SENSOR_FEATURE_GET_4CELL_DATA:
+		{
+			unsigned long long *pFeaturePara_64 =
+			    (unsigned long long *) pFeaturePara;
+			kal_uint32 buf_type = (kal_uint32) (*(pFeaturePara_64 + 0));
+			void *usr_ptr = (void *)(uintptr_t)(*(pFeaturePara_64 + 1));
+			kal_uint32 buf_size = (kal_uint32) (*(pFeaturePara_64 + 2));
+#if defined(CONFIG_CAMERA_AAT_V32X)
+			const int HEADER_SIZE = sizeof(unsigned short);
+
+			// EEPROM_crosstalk_offset for A12 rear sensor gm2 with id IMGSENSOR_SENSOR_IDX_MAIN
+			const int OFFSET_START   = 0x0180;
+			const int OFFSET_END     = 0x2245;
+			const int CAL_SIZE       = OFFSET_END - OFFSET_START + 1;
+			const int TYPE_XTALK_CAL = 0; // Correspond to FOUR_CELL_CAL_TYPE_GAIN_TBL (XTALK_CAL)
+
+			int cal_read_size        = buf_size - HEADER_SIZE;
+
+			const int EEPROM_SIZE    = IMGSENSOR_GET_CAL_SIZE_BY_SENSOR_IDX(pFeatureCtrl->InvokeCamera);
+			char *rom_cal_buf        = NULL;
+
+			IMGSENSOR_GET_CAL_BUF_BY_SENSOR_IDX(pFeatureCtrl->InvokeCamera, &rom_cal_buf);
+
+			pr_info("[CAMERA_HW] GET_4CELL_DATA - camera=%d, buf_size=%d, actual read = header(%d) + cal read(%d of %d(0x%X~0x%X))\n",
+				pFeatureCtrl->InvokeCamera, buf_size, HEADER_SIZE, cal_read_size, CAL_SIZE, OFFSET_START, OFFSET_END);
+			if ((usr_ptr == NULL) || (rom_cal_buf == NULL) ||
+				(pFeatureCtrl->InvokeCamera != IMGSENSOR_SENSOR_IDX_MAIN) ||
+				(buf_size < HEADER_SIZE) ||
+				(CAL_SIZE < 0) || (EEPROM_SIZE < 0) || (OFFSET_END >= EEPROM_SIZE)) {
+				kfree(pFeaturePara);
+				pr_err("[CAMERA_HW]ERROR: GET_4CELL_DATA - failed to get the data");
+				return -EINVAL;
+			}
+
+			if (buf_type != TYPE_XTALK_CAL) {
+				pr_info("[CAMERA_HW] GET_4CELL_DATA - read skip for non XTALK type %d", buf_type);
+				cal_read_size = 0;
+			}
+
+			if (cal_read_size > CAL_SIZE) {
+				pr_info("[CAMERA_HW] GET_4CELL_DATA - cal read size (%d) change to CAL_SIZE (%d)",
+					cal_read_size, CAL_SIZE);
+				cal_read_size = CAL_SIZE;
+			}
+
+			// Buffer's first 2 bytes are actual read size
+			if (copy_to_user(
+			    (void __user *)usr_ptr,
+			    (void *)&cal_read_size,
+			    HEADER_SIZE)) {
+				pr_err("[CAMERA_HW]ERROR: copy_to_user fail\n");
+			}
+			// Buffer's remaining bytes are actual read data
+			if (copy_to_user(
+			    (void __user *)(usr_ptr + HEADER_SIZE),
+			    (void *)&rom_cal_buf[OFFSET_START],
+			    cal_read_size)) {
+				pr_err("[CAMERA_HW]ERROR: copy_to_user fail\n");
+			}
+			*(pFeaturePara_64 + 1) = (uintptr_t) usr_ptr;
+#else
+			kfree(pFeaturePara);
+			pr_err("[CAMERA_HW]ERROR: GET_4CELL_DATA - Do nothing (camera=%d, buf_type=%d, buf_ptr=%p, buf_size=%d)",
+				pFeatureCtrl->InvokeCamera, buf_type, usr_ptr, buf_size);
+			return -EINVAL;
+#endif
+		}
+		break;
+
 	case SENSOR_FEATURE_SET_LSC_TBL:
 		{
 #define LSC_TBL_DATA_SIZE 1024
@@ -2199,6 +2377,7 @@ static int imgsensor_probe(struct platform_device *pplatform_device)
 	imgsensor_i2c_create();
 	imgsensor_proc_init();
 	imgsensor_init_sensor_list();
+	CAM_INFO_PROB(pdevice->of_node);
 
 #ifdef IMGSENSOR_OC_ENABLE
 	imgsensor_oc_init();

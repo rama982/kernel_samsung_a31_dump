@@ -197,8 +197,8 @@ static int iWriteData_CAM_CAL(struct i2c_client *client,
 }
 #endif
 
-unsigned int Common_read_region(struct i2c_client *client, unsigned int addr,
-				unsigned char *data, unsigned int size)
+unsigned int Common_read_region(struct i2c_client *client, struct CAM_CAL_SENSOR_INFO sensor_info,
+								unsigned int addr, unsigned char *data, unsigned int size)
 {
 	unsigned int ret = 0;
 	struct timeval t;
@@ -213,8 +213,8 @@ unsigned int Common_read_region(struct i2c_client *client, unsigned int addr,
 	return ret;
 }
 
-unsigned int Common_write_region(struct i2c_client *client, unsigned int addr,
-				unsigned char *data, unsigned int size)
+unsigned int Common_write_region(struct i2c_client *client, struct CAM_CAL_SENSOR_INFO sensor_info,
+								unsigned int addr, unsigned char *data, unsigned int size)
 {
 	unsigned int ret = 0;
 #if EEPROM_WRITE_EN

@@ -623,6 +623,15 @@ static int ccif_rx_collect(struct md_ccif_queue *queue, int budget,
 			goto OUT;
 		}
 		ccci_h = (struct ccci_header *)skb->data;
+
+#ifdef CONFIG_MTK_SRIL_SUPPORT
+		if (ccci_h->channel == CCCI_RIL_IPC0_RX
+			|| ccci_h->channel == CCCI_RIL_IPC1_RX) {
+			print_hex_dump(KERN_INFO, "1. mif: RX: ",
+					DUMP_PREFIX_NONE, 32, 1, skb->data, 32, 0);
+		}
+#endif
+
 		if (md_ctrl->md_id == MD_SYS3) {
 			/* md3(c2k) logical channel number is not
 			 * the same as other modems,
@@ -1203,6 +1212,13 @@ static int md_ccif_op_send_skb(unsigned char hif_id, int qno,
 			CCCI_ERROR_LOG(md_ctrl->md_id, TAG,
 				"TX:ERR rbf write: ret(%d)!=req(%d)\n",
 				ret, skb->len);
+#ifdef CONFIG_MTK_SRIL_SUPPORT
+		if (ccci_h->channel == CCCI_RIL_IPC0_TX
+			|| ccci_h->channel == CCCI_RIL_IPC1_TX) {
+			print_hex_dump(KERN_INFO, "1. mif: TX: ",
+					DUMP_PREFIX_NONE, 32, 1, skb->data, 32, 0);
+		}
+#endif
 		ccci_md_add_log_history(&md_ctrl->traffic_info, OUT,
 			(int)queue->index, ccci_h, 0);
 		/* free request */
@@ -1212,6 +1228,13 @@ static int md_ccif_op_send_skb(unsigned char hif_id, int qno,
 		md_ccif_send(hif_id, queue->ccif_ch);
 		spin_unlock_irqrestore(&queue->tx_lock, flags);
 	} else {
+#ifdef CONFIG_MTK_SRIL_SUPPORT
+		if (ccci_h->channel == CCCI_RIL_IPC0_TX
+			|| ccci_h->channel == CCCI_RIL_IPC1_TX) {
+			print_hex_dump(KERN_INFO, "2. mif: TX: ",
+					DUMP_PREFIX_NONE, 32, 1, skb->data, 32, 0);
+		}
+#endif
 		md_flow_ctrl = ccif_is_md_flow_ctrl_supported(md_ctrl);
 		if (likely(md_cap & MODEM_CAP_TXBUSY_STOP)
 			&& md_flow_ctrl > 0) {

@@ -546,6 +546,11 @@ static enum charger_type musb_hal_get_charger_type(void)
 
 	return chg_type;
 }
+
+#ifdef CONFIG_MUIC_S2MU005
+int get_usb_usb_cable_state(void);
+#endif
+
 static bool musb_hal_is_vbus_exist(void)
 {
 	bool vbus_exist;
@@ -559,6 +564,12 @@ static bool musb_hal_is_vbus_exist(void)
 #else
 	vbus_exist = upmu_is_chr_det();
 #endif
+#endif
+#ifdef CONFIG_MUIC_S2MU005
+	{
+		vbus_exist = get_usb_usb_cable_state();
+		DBG(0, "MUIC_USB: vbus_exist=%d", vbus_exist);
+	}
 #endif
 
 	return vbus_exist;
@@ -1557,7 +1568,7 @@ static int mt_usb_probe(struct platform_device *pdev)
 
 #ifdef CONFIG_MTK_MUSB_QMU_SUPPORT
 	isoc_ep_end_idx = 1;
-	isoc_ep_gpd_count = 248; /* 30 ms for HS, at most (30*8 + 1) */
+	isoc_ep_gpd_count = 550; /* 30 ms for HS, at most (30*8 + 1) */
 
 	mtk_host_qmu_force_isoc_restart = 0;
 #endif

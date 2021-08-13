@@ -2,7 +2,7 @@
  * Copyright (C) 2016 MediaTek Inc.
  *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
+ * it under the terms of the GNU General Public License version 2 as<<<<<<<
  * published by the Free Software Foundation.
  *
  * This program is distributed in the hope that it will be useful,
@@ -649,6 +649,11 @@ struct S_START_T {
  * excludes head when enque/deque control
  */
 static unsigned int g_regScen = 0xa5a5a5a5; /* remove later */
+
+static unsigned int g_virtual_cq_cnt[2] = {0, 0};
+static unsigned int g_virtual_cq_cnt_a;
+static unsigned int g_virtual_cq_cnt_b;
+static  spinlock_t  virtual_cqcnt_lock;
 
 
 static /*volatile*/ wait_queue_head_t P2WaitQueueHead_WaitDeque;
@@ -4334,20 +4339,11 @@ static signed int ISP_ReadReg(struct ISP_REG_IO_STRUCT *pRegIo)
 	unsigned int module;
 	void __iomem *regBase;
 
+
 	/*  */
 	struct ISP_REG_STRUCT reg;
 	/* unsigned int* pData = (unsigned int*)pRegIo->Data; */
 	struct ISP_REG_STRUCT *pData = (struct ISP_REG_STRUCT *)pRegIo->pData;
-
-	if ((pRegIo->pData == NULL) ||
-			(pRegIo->Count == 0) ||
-			(pRegIo->Count > ISP_REG_RANGE)) {
-		LOG_NOTICE(
-			"pRegIo->pData is NULL, Count:%d!!\n",
-			pRegIo->Count);
-		Ret = -EFAULT;
-		goto EXIT;
-	}
 
 	if (get_user(module, (unsigned int *)&pData->module) != 0) {
 		LOG_NOTICE("get_user failed\n");
@@ -4538,7 +4534,7 @@ static signed int ISP_WriteReg(struct ISP_REG_IO_STRUCT *pRegIo)
 	/* unsigned char* pData = NULL; */
 	struct ISP_REG_STRUCT *pData = NULL;
 
-	if (pRegIo->Count > 0xFFFFFFFF) {
+	if ((pRegIo->Count * sizeof(struct ISP_REG_STRUCT)) > 0xFFFFF000) {
 		LOG_NOTICE("pRegIo->Count error");
 		Ret = -EFAULT;
 		goto EXIT;
@@ -8944,6 +8940,26 @@ static long ISP_ioctl(struct file *pFile, unsigned int Cmd, unsigned long Param)
 		}
 		LOG_NOTICE("ISP_SET_SEC_ENABLE sec_on = %d\n", sec_on);
 		break;
+	case ISP_SET_VIR_CQCNT:
+		spin_lock((spinlock_t *)(&virtual_cqcnt_lock));
+		if (copy_from_user(&g_virtual_cq_cnt, (void *)Param,
+			sizeof(unsigned int)*2) == 0) {
+			LOG_NOTICE("From hw_module:%d Virtual CQ count from user land : %d\n",
+			g_virtual_cq_cnt[0], g_virtual_cq_cnt[1]);
+		} else {
+			LOG_NOTICE(
+				"Virtual CQ count copy_from_user failed\n");
+			Ret = -EFAULT;
+		}
+		if (g_virtual_cq_cnt[0] == 0) {
+			g_virtual_cq_cnt_a = g_virtual_cq_cnt[1];
+			LOG_NOTICE("Update Virtual CQ cnt for hw_module:0\n");
+		} else if (g_virtual_cq_cnt[0] == 1) {
+			g_virtual_cq_cnt_b = g_virtual_cq_cnt[1];
+			LOG_NOTICE("Update Virtual CQ cnt for hw_module:1\n");
+		}
+		spin_unlock((spinlock_t *)(&virtual_cqcnt_lock));
+		break;
 	default:
 	{
 		LOG_NOTICE("Unknown Cmd(%d)\n", Cmd);
@@ -9424,6 +9440,7 @@ static long ISP_ioctl_compat(struct file *filp, unsigned int cmd,
 	case ISP_SET_PM_QOS_INFO:
 	case ISP_SET_PM_QOS:
 	case ISP_SET_SEC_DAPC_REG:
+	case ISP_SET_VIR_CQCNT:
 		return filp->f_op->unlocked_ioctl(filp, cmd, arg);
 	default:
 		return -ENOIOCTLCMD;
@@ -9709,7 +9726,7 @@ static inline void ISP_StopHW(signed int module)
 	do {
 		regTGSt = (ISP_RD32(CAM_REG_TG_INTER_ST(module)) & 0x00003F00)
 			   >> 8;
-		if (regTGSt == 1 || regTGSt == 0)
+		if (regTGSt == 1)
 			break;
 
 		pr_info("%s: wait 1VD (%d)\n", moduleName, loopCnt);
@@ -9724,10 +9741,17 @@ static inline void ISP_StopHW(signed int module)
 		/* timer*/
 		m_sec = ktime_get();
 
+		while (regTGSt != 1) {
+			regTGSt = (ISP_RD32(CAM_REG_TG_INTER_ST(module))
+				   & 0x00003F00) >> 8;
+			/*timer*/
+			sec = ktime_get();
+			/* wait time>timeoutMs, break */
+			if ((sec - m_sec) > timeoutMs)
+				break;
+		}
 		if (regTGSt == 1)
 			pr_info("%s: wait idle done\n", moduleName);
-		else if (regTGSt == 0)
-			pr_info("plz check regTGSt value");
 		else
 			pr_info("%s: wait idle timeout(%lld)\n", moduleName,
 				(sec - m_sec));
@@ -10006,7 +10030,7 @@ EXIT:
 static signed int ISP_mmap(struct file *pFile, struct vm_area_struct *pVma)
 {
 	unsigned long length = 0;
-	unsigned long pfn = 0x0;
+	unsigned int pfn = 0x0;
 
 	/*pr_info("- E.");*/
 	length = (pVma->vm_end - pVma->vm_start);
@@ -10324,6 +10348,7 @@ static signed int ISP_probe(struct platform_device *pDev)
 		spin_lock_init(&(SpinLock_P2FrameList));
 		spin_lock_init(&(SpinLockRegScen));
 		spin_lock_init(&(SpinLock_UserKey));
+		spin_lock_init(&(virtual_cqcnt_lock));
 		#ifdef ENABLE_KEEP_ION_HANDLE
 		for (i = 0; i < ISP_DEV_NODE_NUM; i++) {
 			if (gION_TBL[i].node != ISP_DEV_NODE_NUM) {
@@ -14809,10 +14834,20 @@ LB_CAMA_SOF_IGNORE:
 	spin_unlock(&(IspInfo.SpinLockIrq[module]));
 	/*  */
 	if (IrqStatus & SOF_INT_ST) {
-		wake_up_interruptible(&IspInfo.WaitQHeadCam
+		if ((ISP_RD32(CAM_REG_CTL_SPARE2(reg_module))%0x100) != g_virtual_cq_cnt_a) {
+			IRQ_LOG_KEEPER(module, m_CurrentPPB, _LOG_INF,
+			"CAMA PHY cqcnt:%d != VIR cqcnt:%d\n",
+			(ISP_RD32(CAM_REG_CTL_SPARE2(reg_module))%0x100), g_virtual_cq_cnt_a);
+		} else {
+			IRQ_LOG_KEEPER(module, m_CurrentPPB, _LOG_INF,
+			"CAMA PHY cqcnt:%d VIR cqcnt:%d\n",
+			(ISP_RD32(CAM_REG_CTL_SPARE2(reg_module))%0x100), g_virtual_cq_cnt_a);
+			wake_up_interruptible(&IspInfo.WaitQHeadCam
 			[ISP_GetWaitQCamIndex(module)]
 			[ISP_WAITQ_HEAD_IRQ_SOF]);
+		}
 	}
+
 	if (IrqStatus & SW_PASS1_DON_ST) {
 		wake_up_interruptible(&IspInfo.WaitQHeadCam
 			[ISP_GetWaitQCamIndex(module)]
@@ -15418,9 +15453,18 @@ LB_CAMB_SOF_IGNORE:
 	spin_unlock(&(IspInfo.SpinLockIrq[module]));
 	/*  */
 	if (IrqStatus & SOF_INT_ST) {
-		wake_up_interruptible(&IspInfo.WaitQHeadCam
+		if ((ISP_RD32(CAM_REG_CTL_SPARE2(reg_module))%0x100) != g_virtual_cq_cnt_b) {
+			IRQ_LOG_KEEPER(module, m_CurrentPPB, _LOG_INF,
+			"CAMB PHY cqcnt:%d != VIR cqcnt:%d\n",
+			(ISP_RD32(CAM_REG_CTL_SPARE2(reg_module))%0x100), g_virtual_cq_cnt_b);
+		} else {
+			IRQ_LOG_KEEPER(module, m_CurrentPPB, _LOG_INF,
+			"CAMB PHY cqcnt:%d VIR cqcnt:%d\n",
+			(ISP_RD32(CAM_REG_CTL_SPARE2(reg_module))%0x100), g_virtual_cq_cnt_b);
+			wake_up_interruptible(&IspInfo.WaitQHeadCam
 			[ISP_GetWaitQCamIndex(module)]
 			[ISP_WAITQ_HEAD_IRQ_SOF]);
+		}
 	}
 	if (IrqStatus & SW_PASS1_DON_ST) {
 		wake_up_interruptible(&IspInfo.WaitQHeadCam

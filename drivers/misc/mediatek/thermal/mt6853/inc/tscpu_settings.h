@@ -132,7 +132,9 @@
 #endif
 
 /* EARA_Thermal power budget allocation support */
+#ifdef CONFIG_MTK_EARA_THERMAL
 #define EARA_THERMAL_SUPPORT
+#endif
 
 #define TS_FILL(n) {#n, n}
 /*#define TS_LEN_ARRAY(name) (sizeof(name)/sizeof(name[0]))*/
@@ -155,6 +157,8 @@
 #else
 #define CONFIG_LVTS_ERROR_AEE_WARNING (0)
 #endif
+
+#define LVTS_REFINE_MANUAL_RCK_WITH_EFUSE  (1)
 
 #define DUMP_LVTS_REGISTER_FOR_ZERO_RAW_ISSUE  (1)
 

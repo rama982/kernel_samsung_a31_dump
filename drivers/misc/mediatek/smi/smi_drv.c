@@ -637,11 +637,7 @@ smi_debug_print(const bool gce, const u32 num, const u32 *pos, const u32 *val)
 				continue;
 
 			if (ret < 0 || len + ret >= LINK_MAX) {
-				ret = snprintf(buf + len, LINK_MAX - len,
-					"%c", '\0');
-				if (ret < 0)
-					SMIDBG("snprintf return error:%d\n",
-						ret);
+				snprintf(buf + len, LINK_MAX - len, "%c", '\0');
 				break;
 			}
 			len += ret;
@@ -825,6 +821,13 @@ static inline void smi_larb_port_set(const struct mtk_smi_dev *smi)
 		i < smi_larb_bw_thrt_en_port[smi->id][1]; i++)
 		writel(readl(smi->base + SMI_LARB_NON_SEC_CON(i)) | 0x8,
 			smi->base + SMI_LARB_NON_SEC_CON(i));
+#if IS_ENABLED(CONFIG_MACH_MT6853)
+		if (readl(smi->base + SMI_LARB_NON_SEC_CON(i)) & 0x4)
+			pr_info("[SMI LOG]smi_larb%d, port%d[2]:%#x\n",
+				smi->id, i,
+				readl(smi->base + SMI_LARB_NON_SEC_CON(i)));
+#endif
+
 
 #if IS_ENABLED(CONFIG_MACH_MT6765) || IS_ENABLED(CONFIG_MACH_MT6768) || \
 	IS_ENABLED(CONFIG_MACH_MT6771)
@@ -832,6 +835,34 @@ static inline void smi_larb_port_set(const struct mtk_smi_dev *smi)
 		writel(0x780000, smi_mmsys_base + MMSYS_HW_DCM_1ST_DIS_SET0);
 #endif
 }
+
+s32 smi_larb_port_check(void)
+{
+#if IS_ENABLED(CONFIG_MACH_MT6853)
+	s32 i;
+
+	mtk_smi_clk_enable(smi_dev[2]);
+
+	for (i = smi_larb_bw_thrt_en_port[2][0];
+		i < smi_larb_bw_thrt_en_port[2][1]; i++)
+		if (readl(smi_dev[2]->base + SMI_LARB_NON_SEC_CON(i)) & 0x4) {
+			pr_info("[SMI LOG]cmdq smi_larb2 port%d:%#x\n",
+				i, readl(smi_dev[2]->base
+				+ SMI_LARB_NON_SEC_CON(i)));
+			writel(readl(smi_dev[2]->base + SMI_LARB_NON_SEC_CON(i))
+				& 0xFFFFFFFB,
+				smi_dev[2]->base + SMI_LARB_NON_SEC_CON(i));
+			pr_info("[SMI LOG]new cmdq smi_larb2 port%d:%#x\n",
+				i, readl(smi_dev[2]->base
+				+ SMI_LARB_NON_SEC_CON(i)));
+		}
+
+	mtk_smi_clk_disable(smi_dev[2]);
+#endif
+	return 0;
+}
+EXPORT_SYMBOL_GPL(smi_larb_port_check);
+
 
 static s32 smi_bwc_conf(const struct MTK_SMI_BWC_CONF *conf)
 {
@@ -1049,6 +1080,7 @@ static void smi_subsys_after_on(enum subsys_id sys)
 	u32 subsys = smi_subsys_to_larbs[sys];
 	u32 smi_scen = smi_scen_map[smi_drv.scen];
 	s32 i;
+	s32 ret;
 
 	if (!subsys)
 		return;
@@ -1058,9 +1090,14 @@ static void smi_subsys_after_on(enum subsys_id sys)
 	for (i = SMI_DEV_NUM - 1; i >= 0; i--)
 		if (subsys & (1 << i)) {
 			smi_clk_record(i, true, NULL);
-			mtk_smi_clk_enable(smi_dev[i]);
-			mtk_smi_conf_set(smi_dev[i], smi_scen);
-			smi_larb_port_set(smi_dev[i]);
+			ret = mtk_smi_clk_enable(smi_dev[i]);
+			if (!ret) {
+				mtk_smi_conf_set(smi_dev[i], smi_scen);
+				smi_larb_port_set(smi_dev[i]);
+			} else {
+				SMIDBG("Clk failed i:%u, smi_scen=%u\n",
+				i, smi_scen);
+			}
 #if IS_ENABLED(CONFIG_MACH_MT6873) && IS_ENABLED(SMI_ASSERT)
 			if (i == SMI_LARB_NUM)
 				cmdq_pkt_flush_async(smi_cmdq.pkt,

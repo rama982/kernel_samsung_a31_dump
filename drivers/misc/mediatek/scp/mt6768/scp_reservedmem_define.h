@@ -16,8 +16,7 @@
 
 static struct scp_reserve_mblock scp_reserve_mblock[] = {
 #ifdef CONFIG_MTK_VOW_SUPPORT
-#if defined(CONFIG_MTK_VOW_AMAZON_SUPPORT) || \
-	defined(CONFIG_MTK_VOW_GVA_SUPPORT)
+#ifdef CONFIG_MTK_VOW_2E2K_SUPPORT
 	{
 		.num = VOW_MEM_ID,
 		.start_phys = 0x0,

@@ -476,7 +476,6 @@ static int alloc_buffer_from_dma(size_t size, struct test_buf_info *buf_info)
 	int ret = 0;
 	unsigned long size_align;
 
-#ifndef CONFIG_MTK_IOMMU_V2
 	unsigned int mva = 0;
 
 	size_align = round_up(size, PAGE_SIZE);
@@ -520,38 +519,6 @@ out1:
 	DISPMSG("%s MVA is 0x%x PA is 0x%pa\n",
 		__func__, mva, &buf_info->buf_pa);
 	return ret;
-
-#else
-
-	struct ion_client *ion_display_client = NULL;
-	struct ion_handle *ion_display_handle = NULL;
-	unsigned long mva = 0;
-
-	size_align = round_up(size, PAGE_SIZE);
-	ion_display_client = disp_ion_create("disp_cap_ovl");
-	if (ion_display_client == NULL) {
-		DISPWARN("primary capture:Fail to create ion\n");
-		ret = 1;
-		goto out;
-	}
-
-	ion_display_handle = disp_ion_alloc(ion_display_client,
-		ION_HEAP_MULTIMEDIA_PA2MVA_MASK, buf_info->buf_pa,
-		size_align);
-	if (ion_display_handle == NULL) {
-		DISPWARN("primary capture:Fail to allocate buffer\n");
-		ret = 1;
-		goto out;
-	}
-	disp_ion_get_mva(ion_display_client, ion_display_handle,
-		&mva, 0, DISP_M4U_PORT_DISP_WDMA0);
-
-out:
-	buf_info->buf_mva = mva;
-	DISPMSG("%s MVA is 0x%lx PA is 0x%pa\n",
-		__func__, mva, &buf_info->buf_pa);
-	return ret;
-#endif
 }
 
 static int release_test_buf(struct test_buf_info *buf_info)
@@ -572,11 +539,9 @@ static int release_test_buf(struct test_buf_info *buf_info)
 		if (buf_info->ion_client)
 			ion_client_destroy(buf_info->ion_client);
 	}
-#ifndef CONFIG_MTK_IOMMU_V2
 	if (!disp_helper_get_option(DISP_OPT_USE_M4U))
 		dma_free_coherent(disp_get_device(), buf_info->size,
 				buf_info->buf_va, buf_info->buf_pa);
-#endif
 #endif
 
 	return 0;
@@ -1562,8 +1527,39 @@ static void process_dbg_opt(const char *opt)
 			save_bmp("/sdcard/dump_output.bmp", composed_buf, w, h);
 		} else
 			DISPERR("error to parse cmd %s\n", opt);
-	}
+#ifdef CONFIG_MTK_HIGH_FRAME_RATE
+	} else if (!strncmp(opt, "set_cfg_id:", 11)) {
+		char *p = (char *)opt + 11;
+		unsigned int cfg_id = 0;
 
+		ret = kstrtouint(p, 10, &cfg_id);
+		DDPMSG("debug:set_cfg_id:%d start\n", cfg_id);
+		primary_display_dynfps_chg_fps(cfg_id);
+		g_force_cfg_id = cfg_id;
+		DDPMSG("debug:set_cfg_id:%d end\n", cfg_id);
+	} else if (!strncmp(opt, "enable_force_fps:", 17)) {
+		char *p = (char *)opt + 17;
+		unsigned int enable_force_fps = 0;
+
+		ret = kstrtouint(p, 10, &enable_force_fps);
+		g_force_cfg = !!enable_force_fps;
+		DDPMSG("debug:g_force_cfg:%d\n", g_force_cfg);
+
+	} else if (!strncmp(opt, "get_multi_cfg", 13)) {
+		struct multi_configs cfgs;
+		unsigned int i = 0;
+		struct dyn_config_info *dyn_info = NULL;
+
+		memset(&cfgs, 0, sizeof(cfgs));
+		primary_display_get_multi_configs(&cfgs);
+
+		DISPMSG("debug:get_multi_cfg:=%d\n", cfgs.config_num);
+		for (i = 0; i < cfgs.config_num; i++) {
+			dyn_info = &(cfgs.dyn_cfgs[i]);
+			DISPMSG("debug:%d,%dfps\n", i, dyn_info->vsyncFPS);
+		}
+#endif
+	}
 #ifdef CONFIG_MTK_ENG_BUILD
 	if (strncmp(opt, "rdma_threshold:", 15) == 0) {
 		ret = sscanf(opt, "rdma_threshold:%d,%d,%d,%d,%d\n",

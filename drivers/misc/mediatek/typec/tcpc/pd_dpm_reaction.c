@@ -18,6 +18,9 @@
 #include "inc/pd_dpm_core.h"
 #include "inc/pd_dpm_pdo_select.h"
 #include "pd_dpm_prv.h"
+#ifdef CONFIG_TYPEC
+#include <linux/usb/typec.h>
+#endif /* CONFIG_TYPEC */
 
 #define DPM_REACTION_COND_ALWAYS		(1<<0)
 #define DPM_REACTION_COND_UFP_ONLY	(1<<1)
@@ -400,13 +403,21 @@ static inline void dpm_check_vconn_highv_prot(struct pd_port *pd_port)
 static uint8_t dpm_reaction_update_pe_ready(struct pd_port *pd_port)
 {
 	uint8_t state;
+#ifdef CONFIG_TYPEC
+	struct tcpc_device *tcpc = pd_port->tcpc_dev;
+#endif /* CONFIG_TYPEC */
 
 	if (!pd_port->pe_data.pe_ready) {
 		DPM_INFO("PE_READY\r\n");
 		pd_port->pe_data.pe_ready = true;
+#ifdef CONFIG_TYPEC
+		tcpc->pwr_opmode = TYPEC_PWR_MODE_PD;
+		typec_set_pwr_opmode(tcpc->port, tcpc->pwr_opmode);
+#else
 #ifdef CONFIG_DUAL_ROLE_USB_INTF
 		dual_role_instance_changed(pd_port->tcpc_dev->dr_usb);
 #endif /* CONFIG_DUAL_ROLE_USB_INTF */
+#endif /* CONFIG_TYPEC */
 	}
 
 	state = dpm_get_pd_connect_state(pd_port);

@@ -31,6 +31,9 @@
 #include "tcpm.h"
 #include <linux/workqueue.h>
 #include <linux/mutex.h>
+
+#include "pmic_auxadc.h"
+
 static struct notifier_block otg_nb;
 static bool usbc_otg_attached;
 static struct tcpc_device *otg_tcpc_dev;
@@ -125,6 +128,18 @@ void vbus_init(void)
 	DBG(0, "---\n");
 
 }
+
+
+int __attribute__ ((weak)) set_chr_boost_current_limit(unsigned int current_limit)
+{
+	return 0;
+}
+
+int __attribute__ ((weak)) set_chr_enable_otg(unsigned int enable)
+{
+	return 0;
+}
+
 
 static bool vbus_on;
 module_param(vbus_on, bool, 0400);
@@ -521,6 +536,24 @@ static void do_host_plug_test_work(struct work_struct *data)
 	__pm_relax(&host_test_wakelock);
 	DBG(0, "END\n");
 }
+
+#ifdef MTK_SW_WORKAROUND
+int pmic_get_vbus(void)
+{
+	int vchr = 0;
+#if defined(CONFIG_POWER_EXT) || (1)
+	vchr = 5001;
+	pr_notice("%s() Fix me MTK_SW_WORKAROUND\n", __func__);
+#else
+	vchr = pmic_get_auxadc_value(AUXADC_LIST_VCDT);
+	vchr =
+	(((fg_cust_data.r_charger_1 +
+	fg_cust_data.r_charger_2) * 100 * vchr) /
+	fg_cust_data.r_charger_2) / 100;
+#endif
+	return vchr;
+}
+#endif
 
 static int check_vbus(void)
 {

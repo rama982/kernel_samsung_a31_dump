@@ -32,6 +32,7 @@
 #include <linux/of_gpio.h>
 #include <linux/of_address.h>
 #include "ccci_config.h"
+#include <mt-plat/mtk_secure_api.h>
 
 #ifdef FEATURE_INFORM_NFC_VSIM_CHANGE
 #include <mach/mt6605.h>
@@ -39,15 +40,13 @@
 #ifdef FEATURE_RF_CLK_BUF
 #include <mtk_clkbuf_ctl.h>
 #endif
-#ifdef CONFIG_MTK_OTP
-#include <mt-plat/mtk_otp.h>
-#endif
 
 #include "ccci_core.h"
 #include "ccci_bm.h"
 #include "ccci_modem.h"
 #include "port_rpc.h"
 #define MAX_QUEUE_LENGTH 16
+#define MTK_RNG_MAGIC 0x74726e67
 
 static struct gpio_item gpio_mapping_table[] = {
 	{"GPIO_FDD_Band_Support_Detection_1",
@@ -1078,31 +1077,6 @@ static void ccci_rpc_work_helper(struct port_t *port, struct rpc_pkt *pkt,
 			break;
 		}
 #endif
-
-#ifdef CONFIG_MTK_OTP
-		/* Fall through */
-		case IPC_RPC_EFUSE_BLOWING:
-			{
-				unsigned int *buf_data;
-				unsigned int cmd;
-
-				buf_data = (unsigned int *) (pkt[0].buf);
-				cmd = *buf_data;
-
-				tmp_data[1] = otp_ccci_handler(cmd);
-				pkt_num = 0;
-				tmp_data[0] = 0;
-				pkt[pkt_num].len = sizeof(unsigned int);
-				pkt[pkt_num++].buf = (void *)&tmp_data[0];
-				pkt[pkt_num].len = sizeof(unsigned int);
-				pkt[pkt_num++].buf = (void *)&tmp_data[1];
-				CCCI_NORMAL_LOG(md_id, RPC,
-					"[IPC_RPC_EFUSE_BLOWING] cmd = 0x%X, return 0x%X\n",
-					cmd, tmp_data[1]);
-				break;
-			}
-#endif
-
 	case IPC_RPC_CCCI_LHIF_MAPPING:
 		{
 			struct ccci_rpc_queue_mapping *remap;
@@ -1171,6 +1145,33 @@ static void ccci_rpc_work_helper(struct port_t *port, struct rpc_pkt *pkt,
 		CCCI_NORMAL_LOG(md_id, RPC,
 			"enter QUERY CARD_TYPE operation in ccci_rpc_work\n");
 		break;
+	case IPC_RPC_TRNG:
+		{
+			unsigned int trng;
+
+			if (pkt_num != 1) {
+				CCCI_ERROR_LOG(md_id, RPC,
+				"invalid parameter for [0x%X]: pkt_num=%d!\n",
+					     p_rpc_buf->op_id, pkt_num);
+				tmp_data[0] = FS_PARAM_ERROR;
+				pkt_num = 0;
+				pkt[pkt_num].len = sizeof(unsigned int);
+				pkt[pkt_num++].buf = (void *)&tmp_data[0];
+				pkt[pkt_num].len = sizeof(unsigned int);
+				pkt[pkt_num++].buf = (void *)&tmp_data[0];
+				break;
+			}
+			trng = mt_secure_call_ret1(MTK_SIP_KERNEL_GET_RND,
+					MTK_RNG_MAGIC, 0, 0, 0);
+			pkt_num = 0;
+			tmp_data[0] = 0;
+			tmp_data[1] = trng;
+			pkt[pkt_num].len = sizeof(unsigned int);
+			pkt[pkt_num++].buf = (void *)&tmp_data[0];
+			pkt[pkt_num].len = sizeof(unsigned int);
+			pkt[pkt_num++].buf = (void *)&tmp_data[1];
+			break;
+		}
 	case IPC_RPC_IT_OP:
 		{
 			int i;

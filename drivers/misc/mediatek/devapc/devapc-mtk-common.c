@@ -269,9 +269,11 @@ static void devapc_violation_triggered(uint32_t vio_idx,
 	enum infra_subsys_id id = DEVAPC_SUBSYS_RESERVED;
 	const struct mtk_device_info *device_info;
 	struct mtk_devapc_dbg_status *dbg_stat;
+	int sramrom_vio_idx;
 
 	device_info = mtk_devapc_ctx->soc->device_info;
 	dbg_stat = mtk_devapc_ctx->soc->dbg_stat;
+	sramrom_vio_idx = mtk_devapc_ctx->soc->vio_info->sramrom_vio_idx;
 
 	if (unlikely(dbg_stat == NULL || device_info == NULL)) {
 		pr_err(PFX "%s:%d NULL pointer\n", __func__, __LINE__);
@@ -329,7 +331,7 @@ static void devapc_violation_triggered(uint32_t vio_idx,
 		DEVAPC_MSG("Device APC Violation Issue/%s", subsys_str);
 
 		/* Connsys will trigger EE instead of AP KE */
-		if (id != INFRA_SUBSYS_CONN)
+		if (id != INFRA_SUBSYS_CONN && vio_idx != sramrom_vio_idx)
 			BUG();
 	} else if (dbg_stat->enable_AEE) {
 

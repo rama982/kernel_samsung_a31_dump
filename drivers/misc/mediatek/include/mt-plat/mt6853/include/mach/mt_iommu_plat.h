@@ -15,17 +15,16 @@
 #define __MT_IOMMU_PLAT_H__
 
 #define MTK_IOMMU_PAGE_TABLE_SHARE (1)
+#define IOMMU_POWER_CLK_SUPPORT
 //#define MTK_APU_TFRP_SUPPORT no need for mt6853
 
 #define MTK_IOMMU_SIZE_NOT_ALIGNMENT
 
 #ifndef CONFIG_FPGA_EARLY_PORTING
-#define IOMMU_POWER_CLK_SUPPORT
 #define MTK_IOMMU_BANK_IRQ_SUPPORT
 
 #ifdef IOMMU_POWER_CLK_SUPPORT
 #define MTK_IOMMU_LOW_POWER_SUPPORT
-#define MTK_DISABLE_DCM_SUPPORT
 #define MTK_WARN_PSEDUO_FIND_SG
 #include "clk-mt6853-pg.h"
 
@@ -36,7 +35,8 @@ enum subsys_id iommu_mtcmos_subsys[MTK_IOMMU_M4U_COUNT] = {
 #endif
 
 #if (defined(CONFIG_TRUSTONIC_TEE_SUPPORT) || \
-	defined(CONFIG_MICROTRUST_TEE_SUPPORT)) && \
+	defined(CONFIG_MICROTRUST_TEE_SUPPORT) || \
+	defined(CONFIG_TEEGRIS_TEE_SUPPORT)) && \
 	defined(CONFIG_MTK_TEE_GP_SUPPORT)
 #if defined(CONFIG_MTK_SEC_VIDEO_PATH_SUPPORT)
 #define MTK_M4U_SECURE_IRQ_SUPPORT
@@ -251,7 +251,7 @@ static inline unsigned int iommu_get_field_by_mask(
 #define F_READ_ENTRY_MMx_MAIN(id)		F_BIT_SET(27+id)
 #define F_READ_ENTRY_PFH			F_BIT_SET(26)
 #define F_READ_ENTRY_MAIN_IDX(mmu, idx)     \
-	F_VAL(idx, 19 + mmu * 6, 14 + mmu * 6)
+	F_VAL(idx, (19 + mmu * 6), (14 + mmu * 6))
 #define F_READ_ENTRY_PFH_IDX(idx)		F_VAL(idx, 11, 5)
 #define F_READ_ENTRY_PFH_PAGE_IDX(idx)		F_VAL(idx, 4, 2)
 #define F_READ_ENTRY_PFH_WAY(way)		F_VAL(way, 1, 0)

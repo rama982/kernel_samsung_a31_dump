@@ -13,7 +13,6 @@
 
 obj-$(CONFIG_MACH_MT6853) += ptp3_v1/
 obj-$(CONFIG_MACH_MT6893) += ptp3_v1/
-obj-$(CONFIG_MACH_MT6833) += ptp3_v1/
 obj-$(CONFIG_MACH_MT6885) += credit_didt_v1/
 obj-$(CONFIG_MACH_MT6873) += credit_didt_v1/
 obj-$(CONFIG_MACH_MT6885) += brisket_v1/
@@ -41,8 +40,6 @@ ifeq ($(CONFIG_MTK_UNIFY_POWER), y)
 obj-$(CONFIG_MACH_MT6771) += upower_v2/
 obj-$(CONFIG_MACH_MT6739) += upower_v2/
 obj-$(CONFIG_MACH_MT8168) += upower_v2/
-obj-$(CONFIG_MACH_MT6893) += upower_v2/
-obj-$(CONFIG_MACH_MT6833) += upower_v2/
 endif
 ifneq ($(CONFIG_FPGA_EARLY_PORTING), y)
 obj-$(CONFIG_MACH_MT6771) += pbm_v3/
@@ -136,7 +133,6 @@ obj-$(CONFIG_MACH_MT6873) += dcm_v1/
 obj-$(CONFIG_MACH_MT6853) += dcm_v1/
 obj-$(CONFIG_MACH_MT6765) += dcm_v1/
 obj-$(CONFIG_MACH_MT8168) += dcm_v1/
-obj-$(CONFIG_MACH_MT6833) += dcm_v1/
 obj-$(CONFIG_MACH_MT6771) += mcdi/
 obj-$(CONFIG_MACH_MT6739) += mcdi/
 obj-$(CONFIG_MACH_MT6785) += cpuidle_v3/
@@ -158,5 +154,4 @@ endif
 obj-y += dvfsrc/
 ifeq ($(CONFIG_MTK_GPU_SUPPORT), y)
 obj-$(CONFIG_MACH_MT6853) += gpufreq_v1/
-obj-$(CONFIG_MACH_MT6833) += gpufreq_v1/
 endif

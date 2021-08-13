@@ -32,6 +32,9 @@
 #endif
 #include "mrdump_private.h"
 #include "mrdump_mini.h"
+#ifdef CONFIG_SEC_DEBUG
+#include <linux/sec_debug.h>
+#endif
 #include <mt-plat/mtk_ram_console.h>
 
 static char mrdump_lk[12];
@@ -193,7 +196,16 @@ int mrdump_common_die(int fiq_step, int reboot_reason, const char *msg,
 		break;
 	}
 
+#ifdef CONFIG_SEC_DEBUG
+	sec_debug_dump_info();
+#endif
+
 	mrdump_mini_ke_cpu_regs(regs);
+
+#ifdef CONFIG_SEC_DEBUG_AUTO_COMMENT
+	dump_backtrace_auto_comment(regs, NULL);
+#endif
+
 	dis_D_inner_flush_all();
 	aee_wdt_zap_locks();
 	console_unlock();
@@ -210,6 +222,11 @@ int ipanic(struct notifier_block *this, unsigned long event, void *ptr)
 	fiq_step = AEE_FIQ_STEP_KE_IPANIC_START;
 #endif
 	crash_setup_regs(&saved_regs, NULL);
+
+#ifdef CONFIG_SEC_DEBUG
+	sec_upload_cause(ptr);
+#endif
+
 	return mrdump_common_die(fiq_step,
 				 AEE_REBOOT_MODE_KERNEL_PANIC,
 				 "Kernel Panic", &saved_regs);
@@ -223,6 +240,11 @@ static int ipanic_die(struct notifier_block *self, unsigned long cmd, void *ptr)
 #ifdef CONFIG_MTK_RAM_CONSOLE
 	fiq_step = AEE_FIQ_STEP_KE_IPANIC_DIE;
 #endif
+
+#ifdef CONFIG_SEC_DEBUG
+	sec_upload_cause((void *)(dargs->str));
+#endif
+
 	return mrdump_common_die(fiq_step,
 				 AEE_REBOOT_MODE_KERNEL_OOPS,
 				 "Kernel Oops", dargs->regs);

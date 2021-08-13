@@ -48,5 +48,6 @@ ifeq ($(CONFIG_MTK_BQ24296_SUPPORT),y)
      obj-$(CONFIG_MTK_SMART_BATTERY) += bq24296.o
 endif
 endif
-
+ifeq ($(CONFIG_MTK_GAUGE_VERSION),30)
 obj-$(CONFIG_TCPC_CLASS) += rt_pd_manager.o
+endif

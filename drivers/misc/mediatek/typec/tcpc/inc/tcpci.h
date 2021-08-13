@@ -50,6 +50,9 @@ extern int tcpci_report_power_control(struct tcpc_device *tcpc, bool en);
 extern int tcpc_typec_init(struct tcpc_device *tcpc, uint8_t typec_role);
 extern void tcpc_typec_deinit(struct tcpc_device *tcpc);
 extern int tcpc_dual_role_phy_init(struct tcpc_device *tcpc);
+#ifdef CONFIG_TYPEC
+extern int tcpc_typec_class_init(struct tcpc_device *tcpc);
+#endif /* CONFIG_TYPEC */
 
 extern struct tcpc_device *tcpc_device_register(
 		struct device *parent, struct tcpc_desc *tcpc_desc,
@@ -82,6 +85,7 @@ int tcpci_get_alert_status(struct tcpc_device *tcpc, uint32_t *alert);
 int tcpci_get_fault_status(struct tcpc_device *tcpc, uint8_t *fault);
 int tcpci_get_power_status(struct tcpc_device *tcpc, uint16_t *pw_status);
 int tcpci_init(struct tcpc_device *tcpc, bool sw_reset);
+int tcpci_ss_factory(struct tcpc_device *tcpc);
 int tcpci_init_alert_mask(struct tcpc_device *tcpc);
 
 int tcpci_get_cc(struct tcpc_device *tcpc);

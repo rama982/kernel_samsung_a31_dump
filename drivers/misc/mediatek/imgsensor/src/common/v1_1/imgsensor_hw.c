@@ -20,6 +20,11 @@
 #include "imgsensor_sensor.h"
 #include "imgsensor_hw.h"
 
+#define CHECK_CAM_VDDIO_CNT
+#ifdef CHECK_CAM_VDDIO_CNT
+static int cam_io_cnt;
+#endif
+
 enum IMGSENSOR_RETURN imgsensor_hw_init(struct IMGSENSOR_HW *phw)
 {
 	struct IMGSENSOR_HW_SENSOR_POWER      *psensor_pwr;
@@ -80,6 +85,10 @@ enum IMGSENSOR_RETURN imgsensor_hw_init(struct IMGSENSOR_HW *phw)
 		}
 	}
 
+#ifdef CHECK_CAM_VDDIO_CNT
+	cam_io_cnt = 0;
+#endif
+
 	return IMGSENSOR_RETURN_SUCCESS;
 }
 
@@ -91,6 +100,11 @@ enum IMGSENSOR_RETURN imgsensor_hw_release_all(struct IMGSENSOR_HW *phw)
 		if (phw->pdev[i]->release != NULL)
 			(phw->pdev[i]->release)(phw->pdev[i]->pinstance);
 	}
+
+#ifdef CHECK_CAM_VDDIO_CNT
+	cam_io_cnt = 0;
+#endif
+
 	return IMGSENSOR_RETURN_SUCCESS;
 }
 
@@ -143,7 +157,7 @@ static enum IMGSENSOR_RETURN imgsensor_hw_power_sequence(
 				phw->pdev[psensor_pwr->id[ppwr_info->pin]];
 
 				if (__ratelimit(&ratelimit))
-					PK_DBG(
+					PK_INFO(
 					"sensor_idx %d, ppwr_info->pin %d, ppwr_info->pin_state_on %d, delay %u",
 					sensor_idx,
 					ppwr_info->pin,
@@ -154,6 +168,11 @@ static enum IMGSENSOR_RETURN imgsensor_hw_power_sequence(
 					pdev->set(pdev->pinstance,
 					sensor_idx,
 				    ppwr_info->pin, ppwr_info->pin_state_on);
+
+#ifdef CHECK_CAM_VDDIO_CNT
+			if (ppwr_info->pin == IMGSENSOR_HW_PIN_DOVDD)
+				cam_io_cnt++;
+#endif
 			}
 
 			mdelay(ppwr_info->pin_on_delay);
@@ -169,7 +188,7 @@ static enum IMGSENSOR_RETURN imgsensor_hw_power_sequence(
 			pin_cnt--;
 
 			if (__ratelimit(&ratelimit))
-				PK_DBG(
+				PK_INFO(
 				"sensor_idx %d, ppwr_info->pin %d, ppwr_info->pin_state_off %d, delay %u",
 				sensor_idx,
 				ppwr_info->pin,
@@ -179,6 +198,17 @@ static enum IMGSENSOR_RETURN imgsensor_hw_power_sequence(
 			if (ppwr_info->pin != IMGSENSOR_HW_PIN_UNDEF) {
 				pdev =
 				phw->pdev[psensor_pwr->id[ppwr_info->pin]];
+
+#ifdef CHECK_CAM_VDDIO_CNT
+				if (ppwr_info->pin == IMGSENSOR_HW_PIN_DOVDD)
+					cam_io_cnt--;
+
+				if (ppwr_info->pin == IMGSENSOR_HW_PIN_DOVDD &&
+					sensor_idx == 0 && (cam_io_cnt > 0)) {
+					pr_info("VDDIO off skip\n");
+					continue;
+				}
+#endif
 
 				if (pdev->set != NULL)
 					pdev->set(pdev->pinstance,
@@ -203,7 +233,7 @@ enum IMGSENSOR_RETURN imgsensor_hw_power(
 	char *curr_sensor_name = psensor->inst.psensor_list->name;
 	char str_index[LENGTH_FOR_SNPRINTF];
 
-	PK_DBG("sensor_idx %d, power %d curr_sensor_name %s, enable list %s\n",
+	PK_INFO("sensor_idx %d, power %d curr_sensor_name %s, enable list %s\n",
 		sensor_idx,
 		pwr_status,
 		curr_sensor_name,

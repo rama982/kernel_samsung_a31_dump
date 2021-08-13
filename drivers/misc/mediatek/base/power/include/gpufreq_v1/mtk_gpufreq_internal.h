@@ -26,9 +26,6 @@
 #elif defined(CONFIG_MACH_MT6853)
 #include "mt6853/mtk_gpufreq_internal_plat.h"
 
-#elif defined(CONFIG_MACH_MT6833)
-#include "mt6833/mtk_gpufreq_internal_plat.h"
-
 #endif
 
 #endif /* __MTK_GPUFREQ_INTERNAL_H__ */

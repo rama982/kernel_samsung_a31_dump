@@ -21,7 +21,8 @@ extern int __attribute__((weak)) __ddp_mem_test(unsigned long *pSrc,
 	unsigned long *pDst, unsigned long pDstPa,
 	int need_sync);
 
-#ifdef M4U_TEE_SERVICE_ENABLE
+#if defined(PSEUDO_M4U_TEE_SERVICE_ENABLE) || \
+	defined(M4U_TEE_SERVICE_ENABLE)
 extern int m4u_sec_init(void);
 extern int m4u_config_port_tee(struct M4U_PORT_STRUCT *pM4uPort);
 #endif

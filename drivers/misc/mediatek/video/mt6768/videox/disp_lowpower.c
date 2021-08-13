@@ -67,6 +67,7 @@
 #include "disp_partial.h"
 #ifdef MTK_FB_MMDVFS_SUPPORT
 //#include "mmdvfs_mgr.h"
+#include <mmdvfs_pmqos.h>
 #endif
 
 /* device tree */
@@ -159,7 +160,16 @@ static struct golden_setting_context *_get_golden_setting_context(void)
 		g_golden_setting_context.is_wrot_sram = 0;
 		g_golden_setting_context.is_rsz_sram = 0;
 		g_golden_setting_context.mmsys_clk = MMSYS_CLK_LOW;
-
+#ifdef CONFIG_MTK_HIGH_FRAME_RATE
+		/*DynFPS
+		 *fps is no use for ovl golden but may useful for rdma & wdma
+		 *ToDo use fps or timing fps
+		 */
+		g_golden_setting_context.fps =
+			primary_display_get_def_timing_fps(0) / 100;
+		DISPMSG("%s,gs_ctx.fps=%d\n",
+			__func__, g_golden_setting_context.fps);
+#endif
 		/* primary_display */
 		g_golden_setting_context.dst_width =
 			disp_helper_get_option(DISP_OPT_FAKE_LCM_WIDTH);
@@ -290,6 +300,29 @@ int _blocking_flush(void)
 		cmdqRecDestroy(handle_vfp);
 	}
 
+#ifdef CONFIG_MTK_HIGH_FRAME_RATE
+	/* dynfps is Asyn flush
+	 * and dynfps use esd check GCE thread
+	 * need flush this GCE thread to make sure dynfps has completed
+	 */
+	if (primary_display_is_support_DynFPS()) {
+		struct cmdqRecStruct *handle_dynfps = NULL;
+
+		ret = cmdqRecCreate(
+		CMDQ_SCENARIO_DISP_ESD_CHECK, &handle_dynfps);
+
+		if (ret) {
+			DISPERR("%s:%d, create cmdq handle fail!ret=%d\n",
+				__func__, __LINE__, ret);
+			return -1;
+		}
+		cmdqRecReset(handle_dynfps);
+		_cmdq_insert_wait_frame_done_token_mira(handle_dynfps);
+		cmdqRecFlush(handle_dynfps);
+
+		cmdqRecDestroy(handle_dynfps);
+	}
+#endif
 	return ret;
 }
 
@@ -954,6 +987,29 @@ int primary_display_request_dvfs_perf(
 	enum HRT_OPP_LEVEL opp_level = HRT_OPP_LEVEL_DEFAULT;
 	unsigned int emi_opp, mm_freq;
 
+#ifdef CONFIG_MTK_HIGH_FRAME_RATE
+	if (atomic_read(&dvfs_ovl_req_status) != req) {
+		switch (req) {
+		case HRT_LEVEL_LEVEL3:
+			opp_level = HRT_OPP_LEVEL_LEVEL0;
+			break;
+		case HRT_LEVEL_LEVEL2:
+			opp_level = HRT_OPP_LEVEL_LEVEL0;
+			break;
+		case HRT_LEVEL_LEVEL1:
+			opp_level = HRT_OPP_LEVEL_LEVEL1;
+			break;
+		case HRT_LEVEL_LEVEL0:
+			opp_level = HRT_OPP_LEVEL_LEVEL1;
+			break;
+		case HRT_LEVEL_DEFAULT:
+			opp_level = HRT_OPP_LEVEL_DEFAULT;
+			break;
+		default:
+			opp_level = HRT_OPP_LEVEL_DEFAULT;
+			break;
+		}
+#else
 	if (atomic_read(&dvfs_ovl_req_status) != req) {
 		switch (req) {
 		case HRT_LEVEL_LEVEL3:
@@ -975,7 +1031,7 @@ int primary_display_request_dvfs_perf(
 			opp_level = HRT_OPP_LEVEL_DEFAULT;
 			break;
 		}
-
+#endif
 		emi_opp =
 			(opp_level >= HRT_OPP_LEVEL_DEFAULT) ?
 				PM_QOS_DDR_OPP_DEFAULT_VALUE : opp_level;
@@ -1000,6 +1056,16 @@ int primary_display_request_dvfs_perf(
 	}
 #endif
 	return 0;
+}
+
+unsigned long long disp_lp_set_idle_check_interval(
+	unsigned long long new_interval)
+{
+	/*ToDo: ARR whether need lock*/
+	unsigned long long old_interval = idle_check_interval;
+
+	idle_check_interval = new_interval;
+	return old_interval;
 }
 
 static int _primary_path_idlemgr_monitor_thread(void *data)
@@ -1076,8 +1142,13 @@ static int _primary_path_idlemgr_monitor_thread(void *data)
 #ifdef MTK_FB_MMDVFS_SUPPORT
 		dvfs_before_idle = atomic_read(&dvfs_ovl_req_status);
 		/* when screen idle: LP4 enter ULPM; LP3 enter LPM */
-		primary_display_request_dvfs_perf(0,
-			HRT_LEVEL_LEVEL0);
+		if (primary_display_is_video_mode())
+			primary_display_request_dvfs_perf(0,
+				HRT_LEVEL_LEVEL0);
+		/* for display cmd mode 90hz */
+		else
+			primary_display_request_dvfs_perf(0,
+				HRT_LEVEL_DEFAULT);
 #endif
 
 		primary_display_manual_unlock();
@@ -1181,6 +1252,37 @@ void primary_display_sodi_rule_init(void)
 #endif
 }
 
+static int cam_max_bw_cb(struct notifier_block *nb,
+		unsigned long value, void *v)
+{
+	struct LCM_PARAMS *params;
+	unsigned long v_blanking = 125;
+	unsigned long fps = 60;
+	unsigned long bpp = 4;
+	unsigned long resolution = 0;
+	unsigned long mid_value = 0;
+	unsigned long overlap_w = 0;
+
+	params = primary_get_lcm()->params;
+	resolution = params->width * params->height;
+
+	mid_value = value * 100000;
+	mid_value = mid_value / (v_blanking * fps * bpp);
+
+	mid_value *= 100000;
+	overlap_w = mid_value / resolution;
+
+	set_cam_max_bw(overlap_w);
+
+	pr_notice("receive camera max bw=%lu overlap_w:%lu\n",
+		value, overlap_w);
+
+	return 0;
+}
+static struct notifier_block cam_max_bw_notifier = {
+	.notifier_call = cam_max_bw_cb,
+};
+
 int primary_display_lowpower_init(void)
 {
 	struct LCM_PARAMS *params;
@@ -1200,6 +1302,8 @@ int primary_display_lowpower_init(void)
 	/* cmd mode always enable share sram */
 	if (disp_helper_get_option(DISP_OPT_SHARE_SRAM))
 		enter_share_sram(CMDQ_SYNC_RESOURCE_WROT0);
+
+	add_cam_max_bw_notifier(&cam_max_bw_notifier);
 
 	return 0;
 }

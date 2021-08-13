@@ -805,6 +805,8 @@ DEVICE_ATTR(scp_ipi_test, 0644, scp_ipi_test_show, scp_ipi_debug);
 #if SCP_RECOVERY_SUPPORT
 void scp_wdt_reset(int cpu_id)
 {
+	pr_debug("[SCP] %s %d\n", __func__, cpu_id);
+
 	switch (cpu_id) {
 	case 0:
 		writel(V_INSTANT_WDT, R_CORE0_WDT_CFG);
@@ -1735,16 +1737,26 @@ static int scp_device_probe(struct platform_device *pdev)
 	}
 
 	scpreg.irq = platform_get_irq_byname(pdev, "ipc0");
+#if defined(CONFIG_SENSORS_SSP) || defined(CONFIG_SHUB)
+	ret = request_threaded_irq(scpreg.irq, NULL, scp_A_irq_handler,
+		IRQF_ONESHOT, "SCP IPC0", NULL);
+#else
 	ret = request_irq(scpreg.irq, scp_A_irq_handler,
 		IRQF_TRIGGER_NONE, "SCP IPC0", NULL);
+#endif
 	if (ret) {
 		pr_err("[SCP]ipc0 require irq fail %d %d\n", scpreg.irq, ret);
 		//goto err;
 	}
 	pr_debug("ipc0 %d\n", scpreg.irq);
 	scpreg.irq = platform_get_irq_byname(pdev, "ipc1");
+#if defined(CONFIG_SENSORS_SSP) || defined(CONFIG_SHUB)
+	ret = request_threaded_irq(scpreg.irq, NULL, scp_A_irq_handler,
+		IRQF_ONESHOT, "SCP IPC1", NULL);
+#else
 	ret = request_irq(scpreg.irq, scp_A_irq_handler,
 		IRQF_TRIGGER_NONE, "SCP IPC1", NULL);
+#endif
 	if (ret) {
 		pr_err("[SCP]ipc1 require irq fail %d %d\n", scpreg.irq, ret);
 		//goto err;

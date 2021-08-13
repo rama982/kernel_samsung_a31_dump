@@ -488,6 +488,9 @@ static int __init memory_ccci_share_init(struct reserved_mem *rmem)
 		return 1;
 	}
 	ccci_share_cma_init = 1;
+
+	rmem->reusable = true;
+
 	return 0;
 }
 

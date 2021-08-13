@@ -237,7 +237,7 @@ static const char *const tcpc_timer_name[] = {
 #endif /* TCPC_TIMER_DBG_EN || TCPC_TIMER_INFO_EN */
 /* CONFIG_USB_PD_SAFE0V_DELAY */
 #ifdef CONFIG_TCPC_VSAFE0V_DETECT
-#define PD_TIMER_VSAFE0V_DLY_TOUT		50
+#define PD_TIMER_VSAFE0V_DLY_TOUT		200
 #else
 /* #ifndef CONFIG_TCPC_VSAFE0V_DETECT (equal timeout)*/
 #define PD_TIMER_VSAFE0V_DLY_TOUT		400
@@ -1359,12 +1359,9 @@ void tcpc_reset_typec_try_timer(struct tcpc_device *tcpc)
 
 static void tcpc_handle_timer_triggered(struct tcpc_device *tcpc_dev)
 {
-	uint64_t enable_mask;
-	uint64_t triggered_timer;
 	int i = 0;
-
-	triggered_timer = tcpc_get_timer_tick(tcpc_dev);
-	enable_mask = tcpc_get_timer_enable_mask(tcpc_dev);
+	uint64_t triggered_timer = tcpc_get_timer_tick(tcpc_dev);
+	uint64_t enable_mask = tcpc_get_timer_enable_mask(tcpc_dev);
 
 #ifdef CONFIG_USB_POWER_DELIVERY
 	for (i = 0; i < PD_PE_TIMER_END_ID; i++) {
@@ -1378,6 +1375,8 @@ static void tcpc_handle_timer_triggered(struct tcpc_device *tcpc_dev)
 #endif /* CONFIG_USB_POWER_DELIVERY */
 
 	mutex_lock(&tcpc_dev->typec_lock);
+	triggered_timer = tcpc_get_timer_tick(tcpc_dev);
+	enable_mask = tcpc_get_timer_enable_mask(tcpc_dev);
 	for (; i < PD_TIMER_NR; i++) {
 		if (triggered_timer & RT_MASK64(i)) {
 			TCPC_TIMER_DBG(tcpc_dev, i);

@@ -57,7 +57,6 @@
 #include <linux/wait.h>
 #include <linux/spinlock.h>
 #include <linux/delay.h>
-#include <linux/suspend.h>
 /* #include <linux/earlysuspend.h> */
 /* #include <linux/mm.h> */
 #include <linux/vmalloc.h>
@@ -142,6 +141,8 @@
 #include "smi_port.h"
 #include "mmdvfs_pmqos.h"
 #endif
+
+#include <ion_drv.h>
 
 /* -------------------------------------------------------------------------- */
 /*  */
@@ -251,6 +252,9 @@ static struct pm_qos_request jpgdec_qos_request;
 static u64 g_freq_steps[MAX_FREQ_STEP];  //index 0 is max
 static u32 freq_step_size;
 #endif
+
+static struct ion_client *g_jpeg_ion_client;
+
 
 /* ========================================== */
 /* CMDQ */
@@ -391,54 +395,6 @@ static irqreturn_t jpeg_drv_enc_isr(int irq, void *dev_id)
 #endif
 
 #ifdef JPEG_HYBRID_DEC_DRIVER
-static int jpeg_drv_hybrid_dec_suspend(void)
-{
-	int i;
-
-	JPEG_MSG("%s\n", __func__);
-	for (i = 0 ; i < HW_CORE_NUMBER; i++) {
-		JPEG_MSG("jpeg dec suspend core %d\n", i);
-		if (dec_hwinfo[i].locked) {
-			JPEG_MSG("jpeg dec suspend core %d fail\n", i);
-			return -EBUSY;
-		}
-	}
-	return 0;
-}
-
-static int jpeg_drv_hybrid_dec_suspend_notifier(
-					struct notifier_block *nb,
-					unsigned long action, void *data)
-{
-	int i;
-	int wait_cnt = 0;
-
-	JPEG_MSG("%s, action:%ld\n", __func__, action);
-	switch (action) {
-	case PM_SUSPEND_PREPARE:
-		gJpegqDev.is_suspending = 1;
-		for (i = 0 ; i < HW_CORE_NUMBER; i++) {
-			JPEG_MSG("jpeg dec sn wait core %d\n", i);
-			while (dec_hwinfo[i].locked) {
-				JPEG_MSG("jpeg dec sn core %d locked. wait...\n", i);
-				usleep_range(10000, 20000);
-				wait_cnt++;
-				if (wait_cnt > 5) {
-					JPEG_MSG("jpeg dec sn wait core %d fail\n", i);
-					return NOTIFY_DONE;
-				}
-			}
-		}
-		return NOTIFY_OK;
-	case PM_POST_SUSPEND:
-		gJpegqDev.is_suspending = 0;
-		return NOTIFY_OK;
-	default:
-		return NOTIFY_DONE;
-	}
-	return NOTIFY_DONE;
-}
-
 static irqreturn_t jpeg_drv_hybrid_dec_isr(int irq, void *dev_id)
 {
 	int ret = 0;
@@ -809,11 +765,6 @@ static int jpeg_drv_dec_hybrid_lock(unsigned int *pa)
 {
 	int retValue = 0;
 	int id = 0;
-
-	if (gJpegqDev.is_suspending) {
-		JPEG_WRN("jpeg dec is suspending");
-		return -EBUSY;
-	}
 
 	mutex_lock(&jpeg_hybrid_dec_lock);
 	for (id = 0; id < HW_CORE_NUMBER; id++) {
@@ -1420,18 +1371,22 @@ static int jpeg_enc_ioctl(unsigned int cmd, unsigned long arg,
 		}
 
 		/* 2. set src buffer info */
-		JPEG_MSG("[JPEGDRV]SRC_BUF: addr %x, %x, stride %x, %x!!\n",
+		JPEG_MSG("[JPEGDRV]SRC_BUF: addr %x, %x, stride %x, %x fd %d %d!!\n",
 			 cfgEnc.srcBufferAddr,
 			 cfgEnc.srcChromaAddr,
 			 cfgEnc.imgStride,
-			 cfgEnc.memStride);
+			 cfgEnc.memStride,
+			 cfgEnc.srcFd,
+			 cfgEnc.srcFd2);
 
 		ret =
-		    jpeg_drv_enc_set_src_buf(cfgEnc.encFormat,
+		    jpeg_drv_enc_set_src_buf(g_jpeg_ion_client,
+						 cfgEnc.encFormat,
 					     cfgEnc.imgStride,
 					     cfgEnc.memStride,
-					     cfgEnc.srcBufferAddr,
-					     cfgEnc.srcChromaAddr);
+					     cfgEnc.memHeight,
+					     cfgEnc.srcFd,
+					     cfgEnc.srcFd2);
 		if (ret == 0) {
 			JPEG_MSG("[JPGDRV]Enc set srouce buffer failed\n");
 			return -EFAULT;
@@ -1444,14 +1399,17 @@ static int jpeg_enc_ioctl(unsigned int cmd, unsigned long arg,
 		/* } */
 
 		/* 3. set dst buffer info */
-		JPEG_MSG("[JPGDRV]DST_BUF: addr:%x, size:%x, ofs:%x, mask:%x\n",
+		JPEG_MSG("[JPGDRV]DST_BUF: addr:%x, size:%x, ofs:%x, mask:%x Fd 0x%x\n",
 			 cfgEnc.dstBufferAddr,
 			 cfgEnc.dstBufferSize,
 			 cfgEnc.dstBufAddrOffset,
-			 cfgEnc.dstBufAddrOffsetMask);
+			 cfgEnc.dstBufAddrOffsetMask,
+			 cfgEnc.dstFd);
+
 
 		ret =
-		    jpeg_drv_enc_set_dst_buff(cfgEnc.dstBufferAddr,
+		    jpeg_drv_enc_set_dst_buff(g_jpeg_ion_client,
+						  cfgEnc.dstFd,
 					      cfgEnc.dstBufferSize,
 					      cfgEnc.dstBufAddrOffset,
 					      cfgEnc.dstBufAddrOffsetMask);
@@ -1672,8 +1630,7 @@ static int jpeg_hybrid_dec_ioctl(unsigned int cmd, unsigned long arg,
 			JPEG_WRN("JPEG Decoder: Copy from user error\n");
 			return -EFAULT;
 		}
-		if (outParams.timeout != 3000) // JPEG oal magic number
-			return -EFAULT;
+
 		if (jpeg_drv_dec_hybrid_lock(&hwpa) == 0) {
 			*pStatus = JPEG_DEC_PROCESS;
 			if (copy_to_user(
@@ -2412,9 +2369,6 @@ static int jpeg_probe(struct platform_device *pdev)
 	if (IS_ERR(gJpegClk.clk_venc_c1_jpgDec))
 		JPEG_ERR("get MT_CG_VENC_C1_JPGDEC clk error!");
 	JPEG_MSG("get JPGDEC clk done!");
-	jpegDev->pm_notifier.notifier_call = jpeg_drv_hybrid_dec_suspend_notifier;
-	register_pm_notifier(&jpegDev->pm_notifier);
-	jpegDev->is_suspending = 0;
 #endif
 	#ifdef JPEG_DEC_DRIVER
 		jpegDev->decRegBaseVA = (unsigned long)of_iomap(node, 1);
@@ -2584,13 +2538,6 @@ static int jpeg_suspend(struct platform_device *pdev, pm_message_t mesg)
 #ifdef JPEG_DEC_DRIVER
 	if (dec_status != 0)
 		jpeg_drv_dec_deinit();
-#endif
-#ifdef JPEG_HYBRID_DEC_DRIVER
-	int ret;
-
-	ret = jpeg_drv_hybrid_dec_suspend();
-	if (ret != 0)
-		return ret;
 #endif
 #ifdef JPEG_ENC_DRIVER
 	if (enc_status != 0)
@@ -2785,6 +2732,11 @@ static int __init jpeg_init(void)
 #ifdef JPEG_ENC_DRIVER
 	jpeg_drv_enc_prepare_bw_request();
 #endif
+
+	if (!g_jpeg_ion_client && g_ion_device) {
+		JPEG_MSG("create ion client\n");
+		g_jpeg_ion_client = ion_client_create(g_ion_device, "jpegenc");
+	}
 	return 0;
 }
 
@@ -2821,6 +2773,9 @@ static void __exit jpeg_exit(void)
 #ifdef JPEG_ENC_DRIVER
 	jpegenc_drv_enc_remove_bw_request();
 #endif
+	if (g_jpeg_ion_client)
+		ion_client_destroy(g_jpeg_ion_client);
+	g_jpeg_ion_client = NULL;
 	JPEG_MSG("%s -\n", __func__);
 }
 module_init(jpeg_init);

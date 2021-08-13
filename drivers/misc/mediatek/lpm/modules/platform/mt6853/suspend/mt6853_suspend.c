@@ -28,6 +28,11 @@
 #include "mt6853.h"
 #include "mt6853_suspend.h"
 
+#if IS_ENABLED(CONFIG_SEC_PM)
+#include <linux/regulator/consumer.h>
+extern void sec_clock_debug_print_enabled(void);
+#endif
+
 unsigned int mt6853_suspend_status;
 u64 before_md_sleep_time;
 u64 after_md_sleep_time;
@@ -113,6 +118,11 @@ static int __mt6853_suspend_prompt(int type, int cpu,
 
 	printk_deferred("[name:spm&][%s:%d] - prepare suspend enter\n",
 			__func__, __LINE__);
+
+#if IS_ENABLED(CONFIG_SEC_PM)
+	regulator_debug_print_enabled();
+	sec_clock_debug_print_enabled();
+#endif
 
 	ret = mt6853_suspend_common_enter(&mt6853_suspend_status);
 

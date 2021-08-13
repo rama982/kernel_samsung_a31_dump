@@ -16,6 +16,10 @@
 
 #include <lcm_drv.h>
 
+#if defined(CONFIG_SMCDSD_PANEL)
+extern struct LCM_DRIVER smcdsd_panel_drv;
+#endif
+
 extern struct LCM_DRIVER otm1282a_hd720_dsi_vdo_60hz_lcm_drv;
 extern struct LCM_DRIVER otm1282a_hd720_dsi_vdo_lcm_drv;
 extern struct LCM_DRIVER nt35595_fhd_dsi_cmd_truly_8163_lcm_drv;
@@ -344,7 +348,9 @@ extern struct LCM_DRIVER td4330_fhdp_dsi_cmd_auo_rt5081_lcm_drv;
 extern struct LCM_DRIVER td4330_fhdp_dsi_vdo_auo_rt5081_lcm_drv;
 extern struct LCM_DRIVER nt51021h_wuxga_vdo_oncell_boe_lcm_drv;
 extern struct LCM_DRIVER ft8201_wuxga_dsi_vdo_boe_lcm_drv;
-extern struct LCM_DRIVER ft8756_fhdp_dsi_vdo_auo_rt4801_lcm_drv;
+extern struct LCM_DRIVER ea8076g_fhdplus_dis_cmd_lcm_drv;
+extern struct LCM_DRIVER s6e3fc3_fhdp_cmd_lcm_drv;
+extern struct LCM_DRIVER td4150_hdp_dsi_lm36274_lcm_drv;
 
 #ifdef BUILD_LK
 extern void mdelay(unsigned long msec);

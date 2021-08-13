@@ -143,7 +143,7 @@ static u32 target_clk;
 #define LOG_VRB(format, args...) \
 		pr_debug(MyTag "[%s] " format, __func__, ##args)
 
-#define ISP_DEBUG
+// #define ISP_DEBUG
 #ifdef ISP_DEBUG
 #define LOG_DBG(format, args...) \
 		pr_info(MyTag "[%s] " format, __func__, ##args)
@@ -1660,7 +1660,7 @@ static int ISP_WriteReg(struct ISP_REG_IO_STRUCT *pRegIo)
 	int Ret = 0;
 	struct ISP_REG_STRUCT *pData = NULL;
 
-	if (pRegIo->Count > 0xFFFFFFFF) {
+	if ((pRegIo->Count * sizeof(struct ISP_REG_STRUCT)) > 0xFFFFF000) {
 		LOG_NOTICE("pRegIo->Count error");
 		Ret = -EFAULT;
 		goto EXIT;
@@ -2889,7 +2889,6 @@ static long ISP_ioctl(struct file *pFile, unsigned int Cmd, unsigned long Param)
 	case ISP_REGISTER_IRQ_USER_KEY:
 		if (copy_from_user(&RegUserKey, (void *)Param,
 		    sizeof(struct ISP_REGISTER_USERKEY_STRUCT)) == 0) {
-			RegUserKey.userName[sizeof(RegUserKey.userName)-1] = '\0';
 			userKey = ISP_REGISTER_IRQ_USERKEY(RegUserKey.userName);
 			RegUserKey.userKey = userKey;
 			if (copy_to_user((void *)Param, &RegUserKey,
@@ -3981,13 +3980,6 @@ static long ISP_ioctl(struct file *pFile, unsigned int Cmd, unsigned long Param)
 			LOG_NOTICE("get ISP_SET_SEC_DAPC_REG from user fail\n");
 			Ret = -EFAULT;
 		} else {
-			if (Dapc_Reg[0] < ISP_CAM_A_IDX ||
-			    Dapc_Reg[0] >= ISP_CAMSV0_IDX) {
-				LOG_NOTICE("module index(0x%x) error\n",
-					   Dapc_Reg[0]);
-				Ret = -EFAULT;
-				break;
-			}
 			sec_on = Dapc_Reg[1];
 			lock_reg.CAM_REG_CTL_EN[Dapc_Reg[0]] = Dapc_Reg[2];
 			lock_reg.CAM_REG_CTL_DMA_EN[Dapc_Reg[0]] = Dapc_Reg[3];
@@ -4866,7 +4858,7 @@ EXIT:
 static int ISP_mmap(struct file *pFile, struct vm_area_struct *pVma)
 {
 	unsigned long length = 0;
-	unsigned long pfn = 0x0;
+	unsigned int pfn = 0x0;
 
 	/*LOG_DBG("- E.");*/
 	length = (pVma->vm_end - pVma->vm_start);
@@ -7235,7 +7227,7 @@ irqreturn_t ISP_Irq_CAMSV(
 			(unsigned int)(sec);
 
 		if (IspInfo.DebugMask & ISP_DBG_INT) {
-			IRQ_LOG_KEEPER(module, m_CurrentPPB, _LOG_INF,
+			IRQ_LOG_KEEPER(module, m_CurrentPPB, _LOG_DBG,
 				"%s P1_DON_%d(0x%08x_0x%08x) stamp[0x%08x]\n",
 				str,
 				(sof_count[module]) ?
@@ -7268,7 +7260,7 @@ irqreturn_t ISP_Irq_CAMSV(
 			}
 
 			IRQ_LOG_KEEPER(
-				module, m_CurrentPPB, _LOG_INF,
+				module, m_CurrentPPB, _LOG_DBG,
 				"%s P1_SOF_%d_%d(0x%08x_0x%08x,0x%08x),int_us:0x%08x, stamp[0x%08x]\n",
 				str,
 				sof_count[module], cur_v_cnt,

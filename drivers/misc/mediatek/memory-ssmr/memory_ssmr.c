@@ -310,7 +310,8 @@ RESERVEDMEM_OF_DECLARE(svp_memory, "mediatek,memory-svp",
 #endif
 
 #if defined(CONFIG_TRUSTONIC_TRUSTED_UI) ||\
-	defined(CONFIG_BLOWFISH_TUI_SUPPORT)
+	defined(CONFIG_BLOWFISH_TUI_SUPPORT) ||\
+	defined(CONFIG_SAMSUNG_TUI)
 static int __init dedicate_tui_memory(struct reserved_mem *rmem)
 {
 	struct SSMR_Feature *feature;
@@ -773,7 +774,8 @@ static int memory_region_online(struct SSMR_Feature *feature)
 }
 
 #if defined(CONFIG_TRUSTONIC_TRUSTED_UI) ||\
-	defined(CONFIG_BLOWFISH_TUI_SUPPORT)
+	defined(CONFIG_BLOWFISH_TUI_SUPPORT) ||\
+	defined(CONFIG_SAMSUNG_TUI)
 int _tui_region_offline(phys_addr_t *pa, unsigned long *size,
 		u64 upper_limit)
 {

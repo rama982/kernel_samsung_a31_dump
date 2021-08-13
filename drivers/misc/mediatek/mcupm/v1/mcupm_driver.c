@@ -31,11 +31,7 @@
 #define MCUPM_MEM_RESERVED_KEY "mediatek,reserve-memory-mcupm_share"
 #endif
 /* debug API */
-#ifdef CONFIG_MEDIATEK_EMI
-#include <mt-plat/sync_write.h>
 #include <memory/mediatek/emi.h>
-#endif
-
 
 /* MCUPM RESERVED MEM */
 static phys_addr_t mcupm_mem_base_phys;
@@ -78,12 +74,6 @@ static struct mcupm_reserve_mblock mcupm_reserve_mblock[NUMS_MCUPM_MEM_ID] = {
 		.size = 0x100 + MCUPM_PLT_LOGGER_BUF_LEN,
 		/* logger header + 1M log buffer */
 	},
-#if MCUPM_SYS_PI_SUPPORT
-	{
-		.num = MCUPM_SYS_PI_ID,
-		.size = MCUPM_SYS_PI_BUF_LEN,
-	},
-#endif
 };
 
 /* MCUPM RESERVED MEM */
@@ -762,10 +752,8 @@ static char *pin_name[MCUPM_IPI_COUNT] = {
 /* platform callback when ipi timeout */
 void mcupm_ipi_timeout_cb(int ipi_id)
 {
-	pr_info("Error: possible error IPI=%d pin=%s\n",
-		ipi_id,
-		((ipi_id >= 0 && ipi_id <= MCUPM_IPI_COUNT) ?
-		pin_name[ipi_id] : "NA"));
+	pr_info("Error: possible error IPI %d pin=%s\n",
+		ipi_id, pin_name[ipi_id]);
 
 	ipi_monitor_dump(&mcupm_ipidev);
 	mtk_emidbg_dump();
@@ -854,78 +842,3 @@ static int __init mcupm_module_init(void)
 
 arch_initcall(mcupm_init);
 module_init(mcupm_module_init);
-
-#if MCUPM_SYS_PI_SUPPORT
-#ifdef CONFIG_MEDIATEK_EMI
-#define AP_MPU_DOMAIN_ID	0
-#define MUCPM_MPU_DOMAIN_ID	14
-#define MUCPM_MPU_REGION_ID	19
-
-#define SYS_PI_DEBUG		1
-
-#if SYS_PI_DEBUG
-static ssize_t mcupm_sys_pi_show(
-	struct device *kobj,
-	struct device_attribute *attr,
-	char *buf)
-{
-	char *ptr;
-
-	ptr = (char *)mcupm_reserve_mem_get_virt(MCUPM_SYS_PI_ID);
-	ptr = ptr - ((unsigned long)ptr & 0xFFF) + 0x1000;
-	return snprintf(buf, PAGE_SIZE, "%s", ptr);
-}
-
-
-DEVICE_ATTR(sys_pi, 0444, mcupm_sys_pi_show, NULL);
-#endif
-
-static unsigned long long mcupm_start;
-static unsigned long long mcupm_end;
-
-static void mcupm_set_emi_mpu(phys_addr_t base, phys_addr_t size)
-{
-	mcupm_start = base;
-	mcupm_end = base + size - 1;
-}
-
-static void mcupm_lock_emi_mpu(void)
-{
-	if (mcupm_mem_size > 0)
-		mcupm_set_emi_mpu(mcupm_mem_base_phys, mcupm_mem_size);
-}
-
-static int __init post_mcupm_set_emi_mpu(void)
-{
-	struct emimpu_region_t rg_info;
-	struct  mcupm_ipi_data_s ipi_data;
-	int ret;
-
-	mcupm_lock_emi_mpu();
-
-	mtk_emimpu_init_region(&rg_info, MUCPM_MPU_REGION_ID);
-
-	mtk_emimpu_set_addr(&rg_info, mcupm_start, mcupm_end);
-	mtk_emimpu_set_apc(&rg_info, AP_MPU_DOMAIN_ID, MTK_EMIMPU_NO_PROTECTION);
-	mtk_emimpu_set_apc(&rg_info, MUCPM_MPU_DOMAIN_ID, MTK_EMIMPU_NO_PROTECTION);
-	mtk_emimpu_set_protection(&rg_info);
-
-	mtk_emimpu_free_region(&rg_info);
-
-	ipi_data.cmd = MCUPM_SYS_PI_LOG_INIT;
-	ipi_data.u.ctrl.phys = mcupm_reserve_mem_get_phys(MCUPM_SYS_PI_ID);
-	ipi_data.u.ctrl.size = mcupm_reserve_mem_get_size(MCUPM_SYS_PI_ID);
-	ret = mtk_ipi_send_compl(&mcupm_ipidev, CH_S_PLATFORM,
-		IPI_SEND_WAIT, &ipi_data,
-		sizeof(struct mcupm_ipi_data_s) / MCUPM_MBOX_SLOT_SIZE,
-		2000);
-
-#if SYS_PI_DEBUG
-	ret = mcupm_sysfs_create_file(&dev_attr_sys_pi);
-#endif
-	return ret;
-}
-
-late_initcall(post_mcupm_set_emi_mpu);
-#endif
-#endif

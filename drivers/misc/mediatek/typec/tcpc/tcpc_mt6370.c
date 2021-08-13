@@ -377,7 +377,6 @@ static int mt6370_regmap_init(struct mt6370_chip *chip)
 	struct rt_regmap_properties *props;
 	char name[32];
 	int len;
-	int ret;
 
 	props = devm_kzalloc(chip->dev, sizeof(*props), GFP_KERNEL);
 	if (!props)
@@ -388,12 +387,7 @@ static int mt6370_regmap_init(struct mt6370_chip *chip)
 
 	props->rt_regmap_mode = RT_MULTI_BYTE | RT_CACHE_DISABLE |
 				RT_IO_PASS_THROUGH | RT_DBG_GENERAL;
-	ret = snprintf(name, sizeof(name), "mt6370-%02x",
-		chip->client->addr);
-	if (ret < 0 || ret >= sizeof(name)) {
-		dev_info(chip->dev, "%s-%d, snprintf fail\n",
-			__func__, __LINE__);
-	}
+	snprintf(name, sizeof(name), "mt6370-%02x", chip->client->addr);
 
 	len = strlen(name);
 	props->name = kzalloc(len+1, GFP_KERNEL);
@@ -583,10 +577,7 @@ static int mt6370_init_alert(struct tcpc_device *tcpc)
 	if (!name)
 		return -ENOMEM;
 
-	ret = snprintf(name, PAGE_SIZE, "%s-IRQ", chip->tcpc_desc->name);
-	if (ret < 0 || ret >= PAGE_SIZE)
-		pr_info("%s-%d, snprintf fail, ret=%d\n",
-			__func__, __LINE__, ret);
+	snprintf(name, PAGE_SIZE, "%s-IRQ", chip->tcpc_desc->name);
 
 	pr_info("%s name = %s, gpio = %d\n", __func__,
 				chip->tcpc_desc->name, chip->irq_gpio);
@@ -692,6 +683,10 @@ static int mt6370_set_clock_gating(struct tcpc_device *tcpc_dev,
 	}
 
 	if (en) {
+		ret = mt6370_alert_status_clear(tcpc_dev,
+			TCPC_REG_ALERT_RX_STATUS |
+			TCPC_REG_ALERT_RX_HARD_RST |
+			TCPC_REG_ALERT_RX_BUF_OVF);
 		ret = mt6370_alert_status_clear(tcpc_dev,
 			TCPC_REG_ALERT_RX_STATUS |
 			TCPC_REG_ALERT_RX_HARD_RST |
@@ -1042,9 +1037,6 @@ static int mt6370_set_polarity(struct tcpc_device *tcpc, int polarity)
 {
 	int data;
 
-	if (polarity < 0 || polarity > 1)
-		return -EOVERFLOW;
-
 	data = mt6370_init_cc_params(tcpc,
 		tcpc->typec_remote_cc[polarity]);
 	if (data)
@@ -1199,12 +1191,15 @@ static int mt6370_set_rx_enable(struct tcpc_device *tcpc, uint8_t enable)
 	if (ret == 0)
 		ret = mt6370_i2c_write8(tcpc, TCPC_V10_REG_RX_DETECT, enable);
 
-	if ((ret == 0) && (!enable))
-		ret = mt6370_set_clock_gating(tcpc, true);
-
-	/* For testing */
-	if (!enable)
+	if ((ret == 0) && (!enable)) {
+		/*
+		 * do protocal reset to prevent rx sop intterupt
+		 * before set clock gating in detach flow
+		 */
 		mt6370_protocol_reset(tcpc);
+		ret = mt6370_set_clock_gating(tcpc, true);
+	}
+
 	return ret;
 }
 

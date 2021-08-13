@@ -14,13 +14,6 @@
 #include "mtk_cpufreq_internal.h"
 #include "mtk_cpufreq_hybrid.h"
 #include "mtk_cpufreq_platform.h"
-#include <linux/cpufreq.h>
-#include <linux/kthread.h>
-#include <uapi/linux/sched/types.h>
-#include <linux/slab.h>
-#include <trace/events/power.h>
-#include <trace/events/sched.h>
-
 
 #ifdef CONFIG_MTK_CM_MGR
 cpuFreqsampler_func g_pCpuFreqSampler_func_cpi;
@@ -35,32 +28,21 @@ EXPORT_SYMBOL(mt_cpufreq_set_governor_freq_registerCB);
 int mt_cpufreq_set_by_wfi_load_cluster(unsigned int cluster_id,
 	unsigned int freq)
 {
-
 #ifdef CONFIG_HYBRID_CPU_DVFS
 	enum mt_cpu_dvfs_id id = (enum mt_cpu_dvfs_id) cluster_id;
-#if defined(CONFIG_MACH_MT6893)
-	struct mt_cpu_dvfs *p = id_to_cpu_dvfs(id);
-	struct cpufreq_policy *policy = p->mt_policy;
-	int cpu;
-#endif
 
 	if (freq < mt_cpufreq_get_freq_by_idx(id, 15))
 		freq = mt_cpufreq_get_freq_by_idx(id, 15);
+
 	if (freq > mt_cpufreq_get_freq_by_idx(id, 0))
 		freq = mt_cpufreq_get_freq_by_idx(id, 0);
+
 #ifdef CONFIG_MTK_CM_MGR
 	if (g_pCpuFreqSampler_func_cpi)
 		g_pCpuFreqSampler_func_cpi(id, freq);
 #endif /* CONFIG_MTK_CM_MGR */
-#if defined(CONFIG_MACH_MT6893)
-	for_each_cpu(cpu, policy->cpus)
-		trace_cpu_frequency(freq, cpu);
-#endif
+
 	cpuhvfs_set_dvfs(id, freq);
-#if defined(CONFIG_MACH_MT6893)
-	policy->cur = freq;
-	arch_set_freq_scale(policy->cpus, freq, policy->cpuinfo.max_freq);
-#endif
 #endif
 
 	return 0;
@@ -93,8 +75,6 @@ unsigned int mt_cpufreq_find_close_freq(unsigned int cluster_id,
 	struct mt_cpu_dvfs *p = id_to_cpu_dvfs(id);
 	int idx = _search_available_freq_idx(p, freq, CPUFREQ_RELATION_L);
 
-	if (p == NULL)
-		return 0;
 	if (idx < 0)
 		idx = 0;
 
@@ -107,12 +87,8 @@ unsigned int mt_cpufreq_find_Vboot_idx(unsigned int cluster_id)
 {
 	enum mt_cpu_dvfs_id id = (enum mt_cpu_dvfs_id) cluster_id;
 	struct mt_cpu_dvfs *p = id_to_cpu_dvfs(id);
-	int idx;
+	int idx = _search_available_freq_idx_under_v(p, VBOOT_VOLT);
 
-	if (!p)
-		return 0;
-
-	idx = _search_available_freq_idx_under_v(p, VBOOT_VOLT);
 	if (idx > p->nr_opp_tbl)
 		idx = p->nr_opp_tbl;
 
@@ -270,14 +246,12 @@ unsigned int mt_cpufreq_get_cur_freq(unsigned int id)
 	return 0;
 #else
 #ifdef CONFIG_HYBRID_CPU_DVFS
-	int freq_idx;
+	int freq_idx = cpuhvfs_get_cur_dvfs_freq_idx((enum mt_cpu_dvfs_id)id);
+
 #ifdef ENABLE_DOE
 	if (!dvfs_doe.state)
 		return 0;
 #endif
-
-	freq_idx = cpuhvfs_get_cur_dvfs_freq_idx((enum mt_cpu_dvfs_id)id);
-
 	if (freq_idx < 0)
 		freq_idx = 0;
 
@@ -288,8 +262,6 @@ unsigned int mt_cpufreq_get_cur_freq(unsigned int id)
 #else
 	struct mt_cpu_dvfs *p = id_to_cpu_dvfs((enum mt_cpu_dvfs_id)id);
 
-	if (p == NULL)
-		return 0;
 #ifdef ENABLE_DOE
 	if (!dvfs_doe.state)
 		return 0;
@@ -306,14 +278,12 @@ unsigned int mt_cpufreq_get_cur_freq_idx(enum mt_cpu_dvfs_id id)
 	return 0;
 #else
 #ifdef CONFIG_HYBRID_CPU_DVFS
-	int freq_idx;
+	int freq_idx = cpuhvfs_get_cur_dvfs_freq_idx(id);
+
 #ifdef ENABLE_DOE
 	if (!dvfs_doe.state)
 		return 0;
 #endif
-
-	freq_idx = cpuhvfs_get_cur_dvfs_freq_idx(id);
-
 	if (freq_idx < 0)
 		freq_idx = 0;
 
@@ -359,9 +329,6 @@ unsigned int mt_cpufreq_get_freq_by_idx(enum mt_cpu_dvfs_id id, int idx)
 		return 0;
 #endif
 	FUNC_ENTER(FUNC_LV_API);
-
-	if (p == NULL)
-		return 0;
 
 	if (!cpu_dvfs_is_available(p)) {
 		FUNC_EXIT(FUNC_LV_API);

@@ -25,6 +25,7 @@
 static unsigned int ioremap_dump_flag;
 
 /* ioremap table ,for internal dump. */
+static void __iomem *AP_DBG_OUTS; /* debug: AP_DBG_OUTS */
 static void __iomem *AP_MDSRC_REQ;
 static void __iomem *DBGSYS_TIME;
 static void __iomem *PC_Monitor;
@@ -40,6 +41,7 @@ static void __iomem *ELM_reg;
 static void __iomem *USIP_reg;
 
 struct dump_reg_ioremap dump_reg_tab[] = {
+	{&AP_DBG_OUTS, 0x1020E828, 0x4}, /* debug: AP_DBG_OUTS */
 	{&AP_MDSRC_REQ, 0x10006434, 0x4},	/* dump AP_MDSRC_REQ */
 	{&DBGSYS_TIME,	0x0D10111C, 0x4},	/* DBGSYS Time out */
 	{&PC_Monitor,	0x0D11C000, 0x21B0},	/* PC Monitor */
@@ -91,6 +93,13 @@ void internal_md_dump_debug_register(unsigned int md_index)
 			ioremap_dump_flag, __func__);
 		return;
 	}
+
+	/* debug:dump AP_DBG_OUTS, 0x1020E828 - 0x1020E82C */
+	CCCI_ERROR_LOG(md_index, TAG,
+		"debug:AP_DBG_OUTS: 0x%X\n", ccci_read32(AP_DBG_OUTS, 0x0));
+	CCCI_MEM_LOG_TAG(md_index, TAG,
+		"debug:AP_DBG_OUTS: 0x%X\n", ccci_read32(AP_DBG_OUTS, 0x0));
+
 	/* dump AP_MDSRC_REQ, 0x1000_6434 - 0x1000_6437 */
 	CCCI_MEM_LOG_TAG(md_index, TAG,
 		"md_dbg_sys: 0x%X\n", ccci_read32(AP_MDSRC_REQ, 0x0));

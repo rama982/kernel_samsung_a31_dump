@@ -24,6 +24,11 @@
 #include "../inc/mt6360_pmu.h"
 #include "../inc/mt6360_pmu_core.h"
 
+#ifdef CONFIG_BATTERY_SAMSUNG
+#include <../drivers/battery/common/sec_charging_common.h>
+extern int f_mode_battery;
+#endif
+
 struct mt6360_pmu_core_info {
 	struct device *dev;
 	struct mt6360_pmu_info *mpi;
@@ -268,6 +273,15 @@ static int mt6360_pmu_core_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "no platform data specified\n");
 		return -EINVAL;
 	}
+#ifdef CONFIG_BATTERY_SAMSUNG
+#if defined(CONFIG_SEC_FACTORY)
+	/* Disable MRSTB reset */
+	if (f_mode_battery == OB_MODE) {
+		pr_info("%s Disable MREN in OB mode\n", __func__);
+		pdata->mren = 0;
+	}
+#endif
+#endif
 	mpci = devm_kzalloc(&pdev->dev, sizeof(*mpci), GFP_KERNEL);
 	if (!mpci)
 		return -ENOMEM;

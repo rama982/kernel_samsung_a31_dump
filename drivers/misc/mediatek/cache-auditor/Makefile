@@ -12,11 +12,8 @@
 #
 
 LINUXINCLUDE += -include $(srctree)/kernel/sched/sched.h
-ifeq ($(or $(strip $(CONFIG_MTK_CACHE_CONTROL)), $(strip $(CONFIG_MTK_CACHE_PARTITION_CTRL))),y)
-	LINUXINCLUDE += -include $(srctree)/drivers/misc/mediatek/base/power/qos/$(MTK_PLATFORM)/mtk_qos_bound.h
-endif
+LINUXINCLUDE += -include $(srctree)/drivers/misc/mediatek/base/power/qos/$(MTK_PLATFORM)/mtk_qos_bound.h
 
-obj-$(CONFIG_MTK_CACHE_CONTROL) += ca_drv.o
-obj-$(CONFIG_MTK_CACHE_CONTROL) += pftch_qos.o
-obj-$(CONFIG_MTK_CACHE_CONTROL) += utils.o
-obj-$(CONFIG_MTK_CACHE_PARTITION_CTRL) += cache_ctrl.o
+obj-y += ca_drv.o
+obj-y += pftch_qos.o
+obj-y += utils.o

@@ -138,6 +138,30 @@ extern int FP5510E2AF_Release(struct inode *a_pstInode,
 	struct file *a_pstFile);
 extern int FP5510E2AF_GetFileName(unsigned char *pFileName);
 
+#define FP5529AF_SetI2Cclient FP5529AF_SetI2Cclient_Main
+#define FP5529AF_Ioctl FP5529AF_Ioctl_Main
+#define FP5529AF_Release FP5529AF_Release_Main
+#define FP5529AF_GetFileName FP5529AF_GetFileName_Main
+extern int FP5529AF_SetI2Cclient(struct i2c_client *pstAF_I2Cclient,
+	spinlock_t *pAF_SpinLock, int *pAF_Opened);
+extern long FP5529AF_Ioctl(struct file *a_pstFile,
+	unsigned int a_u4Command, unsigned long a_u4Param);
+extern int FP5529AF_Release(struct inode *a_pstInode,
+	struct file *a_pstFile);
+extern int FP5529AF_GetFileName(unsigned char *pFileName);
+
+#define FP5519AF_SetI2Cclient FP5519AF_SetI2Cclient_Main
+#define FP5519AF_Ioctl FP5519AF_Ioctl_Main
+#define FP5519AF_Release FP5519AF_Release_Main
+#define FP5519AF_GetFileName FP5519AF_GetFileName_Main
+extern int FP5519AF_SetI2Cclient(struct i2c_client *pstAF_I2Cclient,
+	spinlock_t *pAF_SpinLock, int *pAF_Opened);
+extern long FP5519AF_Ioctl(struct file *a_pstFile,
+	unsigned int a_u4Command, unsigned long a_u4Param);
+extern int FP5519AF_Release(struct inode *a_pstInode,
+	struct file *a_pstFile);
+extern int FP5519AF_GetFileName(unsigned char *pFileName);
+
 #define DW9814AF_SetI2Cclient DW9814AF_SetI2Cclient_Main
 #define DW9814AF_Ioctl DW9814AF_Ioctl_Main
 #define DW9814AF_Release DW9814AF_Release_Main
@@ -196,17 +220,6 @@ extern long DW9719TAF_Ioctl(struct file *a_pstFile, unsigned int a_u4Command,
 			    unsigned long a_u4Param);
 extern int DW9719TAF_Release(struct inode *a_pstInode, struct file *a_pstFile);
 extern int DW9719TAF_GetFileName(unsigned char *pFileName);
-
-#define DW9763AF_SetI2Cclient DW9763AF_SetI2Cclient_Main
-#define DW9763AF_Ioctl DW9763AF_Ioctl_Main
-#define DW9763AF_Release DW9763AF_Release_Main
-#define DW9763AF_GetFileName DW9763AF_GetFileName_Main
-extern int DW9763AF_SetI2Cclient(struct i2c_client *pstAF_I2Cclient,
-				  spinlock_t *pAF_SpinLock, int *pAF_Opened);
-extern long DW9763AF_Ioctl(struct file *a_pstFile, unsigned int a_u4Command,
-			    unsigned long a_u4Param);
-extern int DW9763AF_Release(struct inode *a_pstInode, struct file *a_pstFile);
-extern int DW9763AF_GetFileName(unsigned char *pFileName);
 
 #define DW9839AF_SetI2Cclient DW9839AF_SetI2Cclient_Main
 #define DW9839AF_Ioctl DW9839AF_Ioctl_Main

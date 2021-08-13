@@ -231,6 +231,11 @@ void low_battery_protect_init(void)
 		, POWER_INT1_VOLT, POWER_INT2_VOLT);
 }
 
+void set_g_low_battery_stop(int val)
+{
+	g_low_battery_stop = val;
+}
+
 int dlpt_check_power_off(void)
 {
 	int ret = 0;
@@ -619,7 +624,7 @@ void register_battery_percent_notify_ext(
 {
 	PMICLOG("[%s] start\n", __func__);
 
-	bpcb_tb_ext[(unsigned int)prio_val].bpcb = battery_percent_callback;
+	bpcb_tb_ext[prio_val].bpcb = battery_percent_callback;
 
 	pr_info("[%s] prio_val=%d\n", __func__, prio_val);
 
@@ -1998,10 +2003,11 @@ int pmic_throttling_dlpt_init(struct platform_device *pdev)
 #if (CONFIG_MTK_GAUGE_VERSION == 30)
 	struct device_node *np;
 	u32 val;
-	char *path;
 
-	path = "/battery";
-	np = of_find_node_by_path(path);
+	np = of_find_node_by_name(NULL, "mtk_battery");
+	if (!np) {
+		pr_err("%s np NULL(mtk_battery)\n", __func__);
+	}
 	if (of_property_read_u32(np, "CAR_TUNE_VALUE", &val) == 0) {
 		fg_cust_data.car_tune_value = (int)val*10;
 		pr_info("Get car_tune_value from DT: %d\n"

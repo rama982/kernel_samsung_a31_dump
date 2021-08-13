@@ -32,11 +32,11 @@
 #include <linux/uidgid.h>
 #include <linux/slab.h>
 #include "tzbatt_initcfg.h"
-#if (CONFIG_MTK_GAUGE_VERSION == 30)
+//#if (CONFIG_MTK_GAUGE_VERSION == 30)
 #include <mtk_battery.h>
-#else
-#include <tmp_battery.h>
-#endif
+//#else
+//#include <tmp_battery.h>
+//#endif
 
 /* ************************************ */
 /* Function prototype*/
@@ -205,6 +205,8 @@ static int get_hw_battery_temp(void)
 	ret = -1270;
 #else
 	/* Phone */
+
+	return 250;
 
 #if (CONFIG_MTK_GAUGE_VERSION == 30)
 	ret = battery_get_bat_temperature();

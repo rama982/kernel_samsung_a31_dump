@@ -19,6 +19,7 @@ obj-$(CONFIG_MTK_FB) += mtkfb_console.o		\
 			mtkfb.o			\
 			mtkfb_fence.o		\
 			fbconfig_kdebug.o	\
+			disp_cust.o             \
 			debug.o			\
 			primary_display.o	\
 			disp_lowpower.o		\
@@ -34,7 +35,8 @@ obj-$(CONFIG_MTK_FB) += mtkfb_console.o		\
 			disp_arr.o		\
 			disp_partial.o		\
 			layering_rule.o \
-			frame_queue.o
+			frame_queue.o \
+			mtk_notify.o
 
 #ifneq ($(CONFIG_MTK_FB), y) # already in video/common/
 #obj-y += mtkfb_dummy.o

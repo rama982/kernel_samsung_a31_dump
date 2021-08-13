@@ -168,7 +168,7 @@ static void scp_ipi_syscore_dbg_resume(void)
 	int i;
 	int ret = 0;
 
-	for (i = 0; i < IRQ_NUMBER; i++) {
+	for (i = 0; i < (int)IRQ_NUMBER; i++) {
 #ifdef CONFIG_MTK_GIC_V3_EXT
 		ret = mt_irq_get_pending(scp_ipi_irqs[i].irq_no);
 #endif
@@ -809,6 +809,8 @@ DEVICE_ATTR(scp_ipi_test, 0644, scp_ipi_test_show, scp_ipi_debug);
 #if SCP_RECOVERY_SUPPORT
 void scp_wdt_reset(int cpu_id)
 {
+	pr_debug("[SCP] %s %d\n", __func__, cpu_id);
+
 	switch (cpu_id) {
 	case 0:
 		writel(V_INSTANT_WDT, R_CORE0_WDT_CFG);
@@ -1705,11 +1707,11 @@ static int scp_device_probe(struct platform_device *pdev)
 	pr_debug("[SCP] mbox mbox probe\n");
 	for (i = 0; i < SCP_MBOX_TOTAL; i++) {
 		scp_mbox_info[i].mbdev = &scp_mboxdev;
-		mtk_mbox_probe(pdev, scp_mbox_info[i].mbdev, i);
+		mtk_mbox_scp_probe(pdev, scp_mbox_info[i].mbdev, i);
 		mbox_setup_pin_table(i);
 	}
 
-	for (i = 0; i < IRQ_NUMBER; i++) {
+	for (i = 0; i < (int)IRQ_NUMBER; i++) {
 		if (scp_ipi_irqs[i].name == NULL)
 			continue;
 

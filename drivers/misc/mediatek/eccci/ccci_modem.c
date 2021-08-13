@@ -98,7 +98,6 @@ struct ccci_smem_region md1_6297_noncacheable_fat[] = {
 {SMEM_USER_RAW_UDC_DATA,	0,		0,		0, },
 {SMEM_USER_MD_WIFI_PROXY,	0,		0,		0,},
 {SMEM_USER_RAW_DFD,		0,		0,		0, },
-{SMEM_USER_SECURITY_SMEM,	0,		0, SMF_NCLR_FIRST, },
 {SMEM_USER_RAW_AMMS_POS,	0,		0, SMF_NCLR_FIRST, },
 {SMEM_USER_MAX, }, /* tail guard */
 };
@@ -828,10 +827,7 @@ void ccci_md_config(struct ccci_modem *md)
 	md->mem_layout.md_bank0.base_ap_view_phy = md_resv_mem_addr;
 	md->mem_layout.md_bank0.size = md_resv_mem_size;
 	/* do not remap whole region, consume too much vmalloc space */
-	md->mem_layout.md_bank0.base_ap_view_vir =
-		ccci_map_phy_addr(
-			md->mem_layout.md_bank0.base_ap_view_phy,
-			MD_IMG_DUMP_SIZE);
+
 	/* Share memory */
 	/*
 	 * MD bank4 is remap to nearest 32M aligned address
@@ -901,16 +897,6 @@ void ccci_md_config(struct ccci_modem *md)
 			"get ccb info base:%lx size:%x\n", (unsigned long)
 		md->mem_layout.md_bank4_cacheable_total.base_ap_view_phy,
 			md->mem_layout.md_bank4_cacheable_total.size);
-#if (MD_GENERATION >= 6293)
-	if (md->index == MD_SYS1) {
-		md->mem_layout.md_bank4_cacheable_total.base_md_view_phy =
-			0x40000000 + (224 * 1024 * 1024) +
-			md->mem_layout.md_bank4_cacheable_total.base_ap_view_phy
-			- round_down(
-			md->mem_layout.md_bank4_cacheable_total.base_ap_view_phy
-			, 0x00100000);
-	}
-#else
 	if (md->index == MD_SYS1) {
 		md->mem_layout.md_bank4_cacheable_total.base_md_view_phy =
 			0x40000000 + get_md_smem_cachable_offset(MD_SYS1) +
@@ -919,7 +905,6 @@ void ccci_md_config(struct ccci_modem *md)
 			md->mem_layout.md_bank4_cacheable_total.base_ap_view_phy
 			, 0x00100000);
 	}
-#endif
 #endif
 #endif
 #endif
@@ -1165,7 +1150,7 @@ int ccci_md_set_boot_data(unsigned char md_id, unsigned int data[], int len)
 
 struct ccci_mem_layout *ccci_md_get_mem(int md_id)
 {
-	if (md_id >= MAX_MD_NUM || md_id < 0)
+	if (md_id >= MAX_MD_NUM)
 		return NULL;
 	return &modem_sys[md_id]->mem_layout;
 }
@@ -1175,7 +1160,7 @@ struct ccci_smem_region *ccci_md_get_smem_by_user_id(int md_id,
 {
 	struct ccci_smem_region *curr = NULL;
 
-	if (md_id >= MAX_MD_NUM || md_id < 0)
+	if (md_id >= MAX_MD_NUM)
 		return NULL;
 
 	if (modem_sys[md_id] == NULL) {
@@ -1679,8 +1664,6 @@ static void config_ap_side_feature(struct ccci_modem *md,
 	md_feature->feature_set[NVRAM_CACHE_SHARE_MEMORY].support_mask =
 		CCCI_FEATURE_NOT_SUPPORT;
 #endif
-	md_feature->feature_set[SECURITY_SHARE_MEMORY].support_mask =
-		CCCI_FEATURE_MUST_SUPPORT;
 
 	/* This item is reserved */
 	md_feature->feature_set[SECURITY_SHARE_MEMORY].support_mask =
@@ -2267,13 +2250,6 @@ int ccci_md_prepare_runtime_data(unsigned char md_id, unsigned char *data,
 				rt_mem_view);
 				break;
 #endif
-			case SECURITY_SHARE_MEMORY:
-				ccci_smem_region_set_runtime(md_id,
-					SMEM_USER_SECURITY_SMEM,
-					&rt_feature, &rt_shm);
-				append_runtime_feature(&rt_data, &rt_feature,
-				&rt_shm);
-				break;
 			default:
 				break;
 			};

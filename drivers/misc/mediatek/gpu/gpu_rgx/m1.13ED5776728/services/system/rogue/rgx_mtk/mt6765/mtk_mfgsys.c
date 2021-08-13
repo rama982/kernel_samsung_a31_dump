@@ -180,6 +180,7 @@ static IMG_UINT32 MTKGetRGXDevIdx(void)
 static void MTKWriteBackFreqToRGX(PVRSRV_DEVICE_NODE *psDevNode,
 		IMG_UINT32 ui32NewFreq)
 {
+	PVRSRV_DATA *psPVRSRVData = PVRSRVGetPVRSRVData();
 	RGX_DATA *psRGXData = (RGX_DATA *)psDevNode->psDevConfig->hDevData;
 
 	/* kHz to Hz write to RGX as the same unit */
@@ -308,6 +309,8 @@ static void MTKDisableMfgClock(IMG_BOOL bForce)
 #if defined(MTK_USE_HW_APM)
 static int MTKInitHWAPM(void)
 {
+	unsigned int regval;
+
 	if (!g_pvRegsKM)
 		g_pvRegsKM = OSMapPhysToLin(gsRegsPBase, 0x1000, 0);
 
@@ -380,9 +383,7 @@ static IMG_BOOL MTKDoGpuDVFS(IMG_UINT32 ui32NewFreqID, IMG_BOOL bIdleDevice)
 {
 	PVRSRV_ERROR eResult;
 	IMG_UINT32 ui32RGXDevIdx;
-	unsigned int ui32GPUFreq;
-	unsigned int ui32CurFreqID;
-	PVRSRV_DEV_POWER_STATE ePowerState;
+	IMG_BOOL bet = IMG_FALSE;
 
 	/* bottom bound */
 	if (ui32NewFreqID > g_bottom_freq_id)
@@ -409,6 +410,10 @@ static IMG_BOOL MTKDoGpuDVFS(IMG_UINT32 ui32NewFreqID, IMG_BOOL bIdleDevice)
 	eResult = PVRSRVDevicePreClockSpeedChange(ui32RGXDevIdx,
 			bIdleDevice, (void *)NULL);
 	if ((eResult == PVRSRV_OK) || (eResult == PVRSRV_ERROR_RETRY)) {
+		unsigned int ui32GPUFreq;
+		unsigned int ui32CurFreqID;
+		PVRSRV_DEV_POWER_STATE ePowerState;
+
 		PVRSRVGetDevicePowerState(ui32RGXDevIdx, &ePowerState);
 		if (ePowerState != PVRSRV_DEV_POWER_STATE_ON)
 			MTKEnableMfgClock(IMG_FALSE);
@@ -443,16 +448,19 @@ static IMG_BOOL MTKDoGpuDVFS(IMG_UINT32 ui32NewFreqID, IMG_BOOL bIdleDevice)
 static void MTKCommitFreqIdx(unsigned long ui32NewFreqID,
 	GED_DVFS_COMMIT_TYPE eCommitType, int *pbCommited)
 {
-	unsigned int ui32GPUFreq;
-	unsigned int ui32CurFreqID;
 	PVRSRV_DEV_POWER_STATE ePowerState;
 	PVRSRV_DEVICE_NODE *psDevNode = MTKGetRGXDevNode();
 	PVRSRV_ERROR eResult;
+
 
 	if (psDevNode) {
 		eResult = PVRSRVDevicePreClockSpeedChange(psDevNode,
 			IMG_FALSE, (void *)NULL);
 		if ((eResult == PVRSRV_OK) || (eResult == PVRSRV_ERROR_RETRY)) {
+			unsigned int ui32GPUFreq;
+			unsigned int ui32CurFreqID;
+			PVRSRV_DEV_POWER_STATE ePowerState;
+
 			PVRSRVGetDevicePowerState(psDevNode, &ePowerState);
 
 			if (ePowerState == PVRSRV_DEV_POWER_STATE_ON) {
@@ -495,8 +503,7 @@ static void MTKCommitFreqIdx(unsigned long ui32NewFreqID,
 	if (pbCommited)
 		*pbCommited = IMG_FALSE;
 }
-
-static unsigned int MTKCommitFreqForPVR(unsigned long ui32NewFreq)
+unsigned int MTKCommitFreqForPVR(unsigned long ui32NewFreq)
 {
 	int i32MaxLevel = (int)(mt_gpufreq_get_dvfs_table_num()-1);
 	unsigned int ui32NewFreqID = 0;
@@ -567,18 +574,14 @@ static void MTKFreqPowerLimitCB(unsigned int ui32LimitFreqID)
 	OSLockRelease(ghDVFSLock);
 }
 #endif /* ifdef MTK_GPU_DVFS */
-
 #ifdef MTK_CAL_POWER_INDEX
 static void MTKStartPowerIndex(void)
 {
-	PVRSRV_RGXDEV_INFO *psDevInfo;
-	PVRSRV_DEVICE_NODE *psDevNode;
-
 	if (!g_pvRegsBaseKM) {
-		psDevNode = MTKGetRGXDevNode();
+		PVRSRV_DEVICE_NODE *psDevNode = MTKGetRGXDevNode();
 
 		if (psDevNode) {
-			psDevInfo = psDevNode->pvDevice;
+			PVRSRV_RGXDEV_INFO *psDevInfo = psDevNode->pvDevice;
 
 			if (psDevInfo)
 				g_pvRegsBaseKM = psDevInfo->pvRegsBaseKM;
@@ -682,16 +685,14 @@ static IMG_UINT32 MTKCalPowerIndex(void)
 static void MTKCalGpuLoading(unsigned int *pui32Loading,
 	unsigned int *pui32Block, unsigned int *pui32Idle)
 {
-	PVRSRV_DEVICE_NODE *psDevNode;
-	PVRSRV_RGXDEV_INFO *psDevInfo;
+	PVRSRV_DEVICE_NODE *psDevNode = MTKGetRGXDevNode();
 
-	psDevNode = MTKGetRGXDevNode();
 	if (!psDevNode) {
 		PVR_DPF((PVR_DBG_ERROR, "psDevNode not found"));
 		return;
 	}
 
-	psDevInfo = psDevNode->pvDevice;
+	PVRSRV_RGXDEV_INFO *psDevInfo = psDevNode->pvDevice;
 
 	if (psDevInfo && psDevInfo->pfnGetGpuUtilStats) {
 		RGXFWIF_GPU_UTIL_STATS sGpuUtilStats = {0};
@@ -1046,14 +1047,14 @@ static void MTKCustomUpBoundGpuFreq(unsigned int ui32FreqLevel)
 	OSLockRelease(ghDVFSLock);
 }
 
-static unsigned int MTKGetCustomBoostGpuFreq(void)
+unsigned int MTKGetCustomBoostGpuFreq(void)
 {
 	unsigned int ui32MaxLevel = mt_gpufreq_get_dvfs_table_num() - 1;
 
 	return ui32MaxLevel - g_cust_boost_freq_id;
 }
 
-static unsigned int MTKGetCustomUpBoundGpuFreq(void)
+unsigned int MTKGetCustomUpBoundGpuFreq(void)
 {
 	unsigned int ui32MaxLevel = mt_gpufreq_get_dvfs_table_num() - 1;
 
@@ -1091,8 +1092,6 @@ static IMG_OPP *gpasOPPTable;
 static int MTKMFGOppUpdate(int ui32ThrottlePoint)
 {
 	PVRSRV_DEVICE_NODE *psDevNode;
-	PVRSRV_RGXDEV_INFO *psDevInfo;
-	PVRSRV_DEVICE_CONFIG *psDevConfig;
 	int i;
 	int ui32OPPTableSize;
 
@@ -1116,7 +1115,9 @@ static int MTKMFGOppUpdate(int ui32ThrottlePoint)
 		}
 
 		if (psDevNode) {
-			psDevInfo = psDevNode->pvDevice;
+			PVRSRV_RGXDEV_INFO *psDevInfo = psDevNode->pvDevice;
+			PVRSRV_DEVICE_CONFIG *psDevConfig;
+
 			psDevConfig = psDevNode->psDevConfig;
 
 			psDevConfig->sDVFS.sDVFSDeviceCfg.pasOPPTable
@@ -1159,28 +1160,31 @@ void mtk_fdvfs_update_cur_freq(int ui32GPUFreq)
 		if (psDevNode) {
 			eResult = PVRSRVDevicePreClockSpeedChange(psDevNode,
 			IMG_FALSE, (void *)NULL);
-			if ((eResult == PVRSRV_OK) ||
-				(eResult == PVRSRV_ERROR_RETRY)) {
-				MTKWriteBackFreqToRGX(psDevNode, ui32GPUFreq);
-				if (eResult == PVRSRV_OK)
-					PVRSRVDevicePostClockSpeedChange(psDevNode,
-					IMG_FALSE, (void *)NULL);
-			}
+		if ((eResult == PVRSRV_OK) || (eResult == PVRSRV_ERROR_RETRY)) {
+			MTKWriteBackFreqToRGX(psDevNode, ui32GPUFreq);
+			if (eResult == PVRSRV_OK)
+				PVRSRVDevicePostClockSpeedChange(psDevNode,
+				IMG_FALSE, (void *)NULL);
 		}
-		s_ui32GPUFreq = ui32GPUFreq;
 	}
+	s_ui32GPUFreq = ui32GPUFreq;
+}
 }
 EXPORT_SYMBOL(mtk_fdvfs_update_cur_freq);
 
 PVRSRV_ERROR MTKMFGSystemInit(void)
 {
+	int i;
+	PVRSRV_ERROR error;
+
+
 #ifndef MTK_GPU_DVFS
 	gpu_dvfs_enable = 0;
 #else
 	gpu_dvfs_enable = 1;
 
+
 #ifndef ENABLE_COMMON_DVFS
-	PVRSRV_ERROR error;
 	error = OSLockCreate(&ghDVFSLock);
 	if (error != PVRSRV_OK) {
 		PVR_DPF((PVR_DBG_ERROR, "Create DVFS Lock Failed"));
@@ -1274,6 +1278,8 @@ PVRSRV_ERROR MTKMFGSystemInit(void)
 		PVRSRV_DEVICE_NODE *psDevNode = MTKGetRGXDevNode();
 
 		if (psDevNode) {
+			PVRSRV_RGXDEV_INFO *psDevInfo = psDevNode->pvDevice;
+
 			PVRSRV_DEVICE_CONFIG *psDevConfig
 				= psDevNode->psDevConfig;
 
@@ -1347,6 +1353,7 @@ void MTKMFGSystemDeInit(void)
 
 int MTKRGXDeviceInit(PVRSRV_DEVICE_CONFIG *psDevConfig)
 {
+	struct device *pdev;
 #if !defined(CONFIG_MTK_ENABLE_GMO)
 	_mtk_ged_log = ged_log_buf_alloc(64, 64 * 32,
 			GED_LOG_BUF_TYPE_RINGBUFFER, "PowerLog", "ppL");

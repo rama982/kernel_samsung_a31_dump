@@ -19,7 +19,7 @@
 
 #include "kd_camera_typedef.h"
 #include "kd_camera_feature.h"
-
+#include "kd_imgsensor.h"
 
 #include "imgsensor_hw.h"
 
@@ -106,7 +106,7 @@ static enum IMGSENSOR_RETURN imgsensor_hw_power_sequence(
 	struct IMGSENSOR_HW_DEVICE       *pdev;
 	int                               pin_cnt = 0;
 
-/*	while (ppwr_seq < ppower_sequence + IMGSENSOR_HW_SENSOR_MAX_NUM &&
+	while (ppwr_seq < ppower_sequence + IMGSENSOR_HW_SENSOR_MAX_NUM &&
 		ppwr_seq->name != NULL) {
 		if (!strcmp(ppwr_seq->name, PLATFORM_POWER_SEQ_NAME)) {
 			if (sensor_idx == ppwr_seq->_idx)
@@ -120,7 +120,6 @@ static enum IMGSENSOR_RETURN imgsensor_hw_power_sequence(
 
 	if (ppwr_seq->name == NULL)
 		return IMGSENSOR_RETURN_ERROR;
-*/
 
 	ppwr_info = ppwr_seq->pwr_info;
 
@@ -128,24 +127,18 @@ static enum IMGSENSOR_RETURN imgsensor_hw_power_sequence(
 		ppwr_info < ppwr_seq->pwr_info + IMGSENSOR_HW_POWER_INFO_MAX) {
 
 		if (pwr_status == IMGSENSOR_HW_POWER_STATUS_ON &&
-		   ppwr_info->pin != IMGSENSOR_HW_PIN_UNDEF) {
+			ppwr_info->pin != IMGSENSOR_HW_PIN_UNDEF) {
 			pdev = phw->pdev[psensor_pwr->id[ppwr_info->pin]];
-		/*pr_debug(
-		 *  "sensor_idx = %d, pin=%d, pin_state_on=%d, hw_id =%d\n",
-		 *  sensor_idx,
-		 *  ppwr_info->pin,
-		 *  ppwr_info->pin_state_on,
-		 * psensor_pwr->id[ppwr_info->pin]);
-		 */
+
+			pr_info("sensor_idx = %d, pin=%d, pin_state_on=%d, hw_id =%d, delay=%u ms",
+					sensor_idx, ppwr_info->pin, ppwr_info->pin_state_on,
+					psensor_pwr->id[ppwr_info->pin], ppwr_info->pin_on_delay);
 
 			if (pdev->set != NULL)
-				pdev->set(
-				    pdev->pinstance,
-				    sensor_idx,
-				    ppwr_info->pin,
-				    ppwr_info->pin_state_on);
+				pdev->set(pdev->pinstance, sensor_idx, ppwr_info->pin, ppwr_info->pin_state_on);
 
-			mdelay(ppwr_info->pin_on_delay);
+			if (ppwr_info->pin_on_delay)
+				mDELAY(ppwr_info->pin_on_delay);
 		}
 
 		ppwr_info++;
@@ -158,23 +151,24 @@ static enum IMGSENSOR_RETURN imgsensor_hw_power_sequence(
 			pin_cnt--;
 
 			if (ppwr_info->pin != IMGSENSOR_HW_PIN_UNDEF) {
-				pdev =
-				    phw->pdev[psensor_pwr->id[ppwr_info->pin]];
-				mdelay(ppwr_info->pin_on_delay);
+				pdev = phw->pdev[psensor_pwr->id[ppwr_info->pin]];
+
+				if (ppwr_info->pin_on_delay)
+					mDELAY(ppwr_info->pin_on_delay);
+
+				pr_info("sensor_idx %d, ppwr_info->pin %d, ppwr_info->pin_state_off %d, hw_id =%d, delay=%u ms",
+						sensor_idx, ppwr_info->pin, ppwr_info->pin_state_off,
+						psensor_pwr->id[ppwr_info->pin], ppwr_info->pin_on_delay);
 
 				if (pdev->set != NULL)
-					pdev->set(
-					    pdev->pinstance,
-					    sensor_idx,
-					    ppwr_info->pin,
-					    ppwr_info->pin_state_off);
+					pdev->set(pdev->pinstance, sensor_idx, ppwr_info->pin, ppwr_info->pin_state_off);
 			}
 		}
 	}
 
-	/* wait for power stable */
-	if (pwr_status == IMGSENSOR_HW_POWER_STATUS_ON)
-		mdelay(5);
+	//removed delay for power stable, if you need a delay, set in imgsensor_cfg_table.c
+	//if (pwr_status == IMGSENSOR_HW_POWER_STATUS_ON)
+	//	mdelay(5);
 	return IMGSENSOR_RETURN_SUCCESS;
 }
 
@@ -201,6 +195,21 @@ enum IMGSENSOR_RETURN imgsensor_hw_power(
 	!strstr(phw->enable_sensor_by_index[(uint32_t)sensor_idx], curr_sensor_name))
 		return IMGSENSOR_RETURN_ERROR;
 
+	mutex_lock(&psensor->inst.i2c_cfg.pinst->lock);
+	if (pwr_status && psensor->inst.i2c_cfg.pinst->pi2c_state_on) {
+		psensor->inst.i2c_cfg.pinst->refcnt++;
+		if (psensor->inst.i2c_cfg.pinst->refcnt == 1)
+			pinctrl_select_state(
+				psensor->inst.i2c_cfg.pinst->pi2c_pinctrl,
+				psensor->inst.i2c_cfg.pinst->pi2c_state_on);
+	} else if (!pwr_status && psensor->inst.i2c_cfg.pinst->pi2c_state_off) {
+		psensor->inst.i2c_cfg.pinst->refcnt--;
+		if (psensor->inst.i2c_cfg.pinst->refcnt == 0)
+			pinctrl_select_state(
+				psensor->inst.i2c_cfg.pinst->pi2c_pinctrl,
+				psensor->inst.i2c_cfg.pinst->pi2c_state_off);
+	}
+	mutex_unlock(&psensor->inst.i2c_cfg.pinst->lock);
 
 	ret = snprintf(str_index, sizeof(str_index), "%d", sensor_idx);
 	if (ret == 0) {

@@ -35,7 +35,7 @@ const struct of_device_id swtp_of_match[] = {
 };
 #define SWTP_MAX_SUPPORT_MD 1
 struct swtp_t swtp_data[SWTP_MAX_SUPPORT_MD];
-#define MAX_RETRY_CNT 3
+#define MAX_RETRY_CNT 10
 
 static int swtp_send_tx_power(struct swtp_t *swtp)
 {
@@ -169,7 +169,8 @@ static void swtp_tx_delayed_work(struct work_struct *work)
 int swtp_md_tx_power_req_hdlr(int md_id, int data)
 {
 	struct swtp_t *swtp = NULL;
-
+	unsigned long flags;
+	
 	if (md_id < 0 || md_id >= SWTP_MAX_SUPPORT_MD) {
 		CCCI_LEGACY_ERR_LOG(md_id, SYS,
 		"%s:md_id=%d not support\n",
@@ -178,6 +179,10 @@ int swtp_md_tx_power_req_hdlr(int md_id, int data)
 	}
 
 	swtp = &swtp_data[md_id];
+	/*default do tx power for special use*/
+	spin_lock_irqsave(&swtp->spinlock, flags);
+	swtp->tx_power_mode = SWTP_DO_TX_POWER;
+	spin_unlock_irqrestore(&swtp->spinlock, flags);
 	swtp_send_tx_power_state(swtp);
 
 	return 0;

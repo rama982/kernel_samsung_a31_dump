@@ -342,6 +342,25 @@ struct disp_ddp_path_config {
 	int hrt_scale;
 };
 
+struct rx_data {
+	unsigned char byte0;
+	unsigned char byte1;
+	unsigned char byte2;
+	unsigned char byte3;
+};
+
+struct ddp_lcm_read_cmd_table {
+	unsigned char cmd[3];
+	struct rx_data data[3];
+	struct rx_data data1[3];
+};
+
+struct ddp_lcm_write_cmd_table {
+	unsigned char cmd;
+	unsigned char count;
+	unsigned char para_list[64];
+};
+
 /* dpmgr_ioctl cmd definition */
 enum DDP_IOCTL_NAME {
 	/* DSI operation */

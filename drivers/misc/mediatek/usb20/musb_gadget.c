@@ -58,6 +58,7 @@
 #include "musb_qmu.h"
 #endif
 
+extern bool acc_dev_status;
 #define FIFO_START_ADDR 512
 
 /* #define RX_DMA_MODE1 1 */
@@ -2733,6 +2734,14 @@ static int musb_gadget_stop(struct usb_gadget *g)
 		musb->xceiv->otg->state = state;
 	}
 
+	if (musb->rst_err_noti) {
+		musb->event_state = RELEASE;
+		musb->rst_err_noti = false;
+		schedule_delayed_work(&musb->usb_event_work, msecs_to_jiffies(0));
+	}
+	musb->rst_err_cnt = 0;
+	acc_dev_status = 0;
+
 	spin_unlock_irqrestore(&musb->lock, flags);
 
 	/*
@@ -3089,6 +3098,7 @@ void musb_g_reset(struct musb *musb)
 	u8 devctl = musb_readb(mbase, MUSB_DEVCTL);
 	u8 power;
 	struct musb_ep		*ep;
+	ktime_t current_time;
 
 	DBG(2, "<== %s driver '%s'\n", (devctl & MUSB_DEVCTL_BDEVICE)
 	    ? "B-Device" : "A-Device",
@@ -3167,6 +3177,34 @@ void musb_g_reset(struct musb *musb)
 	} else {
 		musb->xceiv->otg->state = OTG_STATE_A_PERIPHERAL;
 		musb->g.is_a_peripheral = 1;
+	}
+
+	if (acc_dev_status && (musb->rst_err_noti == false)) {
+		current_time = ktime_to_ms(ktime_get_boottime());
+
+		if (musb->rst_err_cnt == 0) {
+			if ((current_time - musb->rst_time_before) < 1000) {
+				musb->rst_err_cnt++;
+				musb->rst_time_first = musb->rst_time_before;
+			}
+		} else {
+			if ((current_time - musb->rst_time_first) < 1000) {
+				musb->rst_err_cnt++;
+			} else {
+				musb->rst_err_cnt = 0;
+			}
+		}
+
+		if (musb->rst_err_cnt > ERR_RESET_CNT) {
+			musb->event_state = NOTIFY;
+			schedule_delayed_work(&musb->usb_event_work, msecs_to_jiffies(0));
+			musb->rst_err_noti = true;
+		}
+
+		pr_info("usb: %s rst_err_cnt: %d, time_current: %d, time_before: %d\n",
+			__func__, musb->rst_err_cnt, current_time, musb->rst_time_before);
+
+		musb->rst_time_before = current_time;
 	}
 
 	/* start with default limits on VBUS power draw */

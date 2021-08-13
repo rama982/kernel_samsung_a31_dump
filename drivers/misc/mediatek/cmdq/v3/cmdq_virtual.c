@@ -310,7 +310,7 @@ int cmdq_virtual_disp_thread(enum CMDQ_SCENARIO_ENUM scenario)
 	case CMDQ_SCENARIO_DISP_CONFIG_SUB_PQ:
 	case CMDQ_SCENARIO_DISP_CONFIG_SUB_PWM:
 	case CMDQ_SCENARIO_SUB_MEMOUT:
-		return 1;
+		return 2;
 
 	case CMDQ_SCENARIO_HIGHP_TRIGGER_LOOP:
 	case CMDQ_SCENARIO_DISP_VFP_CHANGE:
@@ -374,15 +374,9 @@ int cmdq_virtual_get_thread_index(enum CMDQ_SCENARIO_ENUM scenario,
 		 * secure thread is enough
 		 */
 		return CMDQ_THREAD_SEC_MDP;
-#if IS_ENABLED(CONFIG_MACH_MT6768) || IS_ENABLED(CONFIG_MACH_MT6771)
-	case CMDQ_SCENARIO_ISP_FDVT:
-	case CMDQ_SCENARIO_ISP_FDVT_OFF:
-		return CMDQ_THREAD_SEC_SUB_DISP;
-#else
 	case CMDQ_SCENARIO_ISP_FDVT:
 	case CMDQ_SCENARIO_ISP_FDVT_OFF:
 		return CMDQ_THREAD_SEC_ISP;
-#endif
 	default:
 		CMDQ_ERR("no dedicated secure thread for scenario:%d\n",
 			scenario);

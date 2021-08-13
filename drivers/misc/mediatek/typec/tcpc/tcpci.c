@@ -14,6 +14,14 @@
 #include "inc/tcpci.h"
 #include <linux/time.h>
 #include <linux/slab.h>
+#ifdef CONFIG_TYPEC
+#include <linux/usb/typec.h>
+#endif /* CONFIG_TYPEC */
+#if defined(CONFIG_BATTERY_SAMSUNG) && defined(CONFIG_PDIC_NOTIFIER)
+#include <linux/usb/typec/common/pdic_notifier.h>
+
+extern struct pdic_notifier_struct pd_noti;
+#endif
 
 #define TCPC_NOTIFY_OVERTIME	(20) /* ms */
 
@@ -196,6 +204,13 @@ int tcpci_init(struct tcpc_device *tcpc, bool sw_reset)
 		return ret;
 
 	return tcpci_get_power_status(tcpc, &power_status);
+}
+
+int tcpci_ss_factory(struct tcpc_device *tcpc)
+{
+	PD_BUG_ON(tcpc->ops->ss_factory == NULL);
+
+	return tcpc->ops->ss_factory(tcpc);
 }
 
 int tcpci_init_alert_mask(struct tcpc_device *tcpc)
@@ -537,10 +552,23 @@ int tcpci_notify_pd_state(struct tcpc_device *tcpc, uint8_t connect)
 {
 	struct tcp_notify tcp_noti;
 	int ret;
+#if 0 /* defined(CONFIG_BATTERY_SAMSUNG) && defined(CONFIG_PDIC_NOTIFIER) */
+	PD_NOTI_TYPEDEF pdic_noti;
+
+	pdic_noti.src = PDIC_NOTIFY_DEV_PDIC;
+	pdic_noti.dest = PDIC_NOTIFY_DEV_BATT;
+	pdic_noti.id = PDIC_NOTIFY_ID_POWER_STATUS;
+	pdic_noti.sub1 = connect;
+	pdic_noti.sub2 = 0;
+	pdic_noti.sub3 = 0;
+
+	pdic_notifier_notify((PD_NOTI_TYPEDEF *)&pdic_noti, &pd_noti, 0);
+#endif
 
 	tcp_noti.pd_state.connected = connect;
 	ret = tcpc_check_notify_time(tcpc, &tcp_noti,
 		TCP_NOTIFY_IDX_USB, TCP_NOTIFY_PD_STATE);
+
 	return ret;
 }
 
@@ -626,6 +654,9 @@ int tcpci_sink_vbus(
 {
 	struct tcp_notify tcp_noti;
 	int ret;
+#ifdef CONFIG_TYPEC
+	enum typec_pwr_opmode mode = TYPEC_PWR_MODE_USB;
+#endif /* CONFIG_TYPEC */
 
 #ifdef CONFIG_USB_POWER_DELIVERY
 	if (type >= TCP_VBUS_CTRL_PD &&
@@ -638,9 +669,15 @@ int tcpci_sink_vbus(
 			switch (tcpc->typec_remote_rp_level) {
 			case TYPEC_CC_VOLT_SNK_1_5:
 				ma = 1500;
+#ifdef CONFIG_TYPEC
+				mode = TYPEC_PWR_MODE_1_5A;
+#endif /* CONFIG_TYPEC */
 				break;
 			case TYPEC_CC_VOLT_SNK_3_0:
 				ma = 3000;
+#ifdef CONFIG_TYPEC
+				mode = TYPEC_PWR_MODE_3_0A;
+#endif /* CONFIG_TYPEC */
 				break;
 			default:
 			case TYPEC_CC_VOLT_SNK_DFT:
@@ -658,6 +695,13 @@ int tcpci_sink_vbus(
 	tcp_noti.vbus_state.ma = ma;
 	tcp_noti.vbus_state.mv = mv;
 	tcp_noti.vbus_state.type = type;
+
+#ifdef CONFIG_TYPEC
+	if (!tcpc->pd_port.pe_data.pe_ready) {
+		tcpc->pwr_opmode = mode;
+		typec_set_pwr_opmode(tcpc->port, mode);
+	}
+#endif /* CONFIG_TYPEC */
 
 	TCPC_DBG("sink_vbus: %d mV, %d mA\r\n", mv, ma);
 	ret = tcpc_check_notify_time(tcpc, &tcp_noti,

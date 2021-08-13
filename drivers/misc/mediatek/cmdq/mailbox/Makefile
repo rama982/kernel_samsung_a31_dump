@@ -4,7 +4,7 @@
 #
 
 ifeq ($(CONFIG_MACH_MT6833),y)
-CMDQ_PLATFORM := "mt6833"
+CMDQ_PLATFORM := mt6833
 else
 CMDQ_PLATFORM := $(MTK_PLATFORM)
 endif
@@ -22,6 +22,12 @@ endif
 
 ifeq ($(CONFIG_TRUSTONIC_TEE_SUPPORT),y)
 include $(srctree)/drivers/misc/mediatek/gud/Makefile.include
+else ifeq ($(CONFIG_TEEGRIS_TEE_SUPPORT),y)
+	ccflags-y += -I$(srctree)/drivers/misc/tzdev/include/tzdev
+endif
+
+ifeq ($(CONFIG_TEEGRIS_TEE_SUPPORT),y)
+ccflags-y += -I$(srctree)/drivers/misc/tzdev/include/tzdev
 endif
 
 ifeq ($(strip $(CONFIG_MTK_ENABLE_GENIEZONE)),y)
@@ -45,5 +51,5 @@ endif # $(CONFIG_MTK_SEC_VIDEO_PATH_SUPPORT) or $(CONFIG_MTK_CAM_SECURITY_SUPPOR
 
 obj-y += cmdq-test.o
 obj-y += cmdq-util.o
-obj-y += $(subst ",,$(CMDQ_PLATFORM))/cmdq-platform.o
+obj-y += $(CMDQ_PLATFORM)/cmdq-platform.o
 obj-y += cmdq-bw-mon.o

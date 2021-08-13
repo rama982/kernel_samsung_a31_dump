@@ -2912,18 +2912,6 @@ PVRSRV_ERROR RGXInitAllocFWImgMem(PVRSRV_DEVICE_NODE   *psDeviceNode,
 	IMG_DEVMEM_SIZE_T	uiDummyLen;
 	DEVMEM_MEMDESC		*psDummyMemDesc = NULL;
 
-	if (RGX_IS_FEATURE_SUPPORTED(psDevInfo, MIPS))
-	{
-		eError = RGXAllocTrampoline(psDeviceNode);
-		if (eError != PVRSRV_OK)
-		{
-			PVR_DPF((PVR_DBG_ERROR,
-					"Failed to allocate trampoline region (%u)",
-					eError));
-			goto failTrampolineMemDescAlloc;
-		}
-	}
-
 	/*
 	 * Set up Allocation for FW code section
 	 */
@@ -3034,6 +3022,18 @@ PVRSRV_ERROR RGXInitAllocFWImgMem(PVRSRV_DEVICE_NODE   *psDeviceNode,
 		         "Failed to acquire devVAddr for fw data mem (%u)",
 		         eError));
 		goto failFWDataMemDescAqDevVirt;
+	}
+
+	if (RGX_IS_FEATURE_SUPPORTED(psDevInfo, MIPS))
+	{
+		eError = RGXAllocTrampoline(psDeviceNode);
+		if (eError != PVRSRV_OK)
+		{
+			PVR_DPF((PVR_DBG_ERROR,
+					"Failed to allocate trampoline region (%u)",
+					eError));
+			goto failTrampolineMemDescAlloc;
+		}
 	}
 
 	if (uiFWCorememCodeLen != 0)
@@ -3163,6 +3163,11 @@ failFWCorememCodeMemDescAqDevVirt:
 		psDevInfo->psRGXFWCorememCodeMemDesc = NULL;
 	}
 failFWCorememCodeMemDescAlloc:
+	if (RGX_IS_FEATURE_SUPPORTED(psDevInfo, MIPS))
+	{
+		RGXFreeTrampoline(psDeviceNode);
+	}
+failTrampolineMemDescAlloc:
 failFWDataMemDescAqDevVirt:
 	DevmemFwUnmapAndFree(psDevInfo, psDevInfo->psRGXFWDataMemDesc);
 	psDevInfo->psRGXFWDataMemDesc = NULL;
@@ -3176,11 +3181,6 @@ failFWCodeMemDescAqDevVirt:
 	DevmemFwUnmapAndFree(psDevInfo, psDevInfo->psRGXFWCodeMemDesc);
 	psDevInfo->psRGXFWCodeMemDesc = NULL;
 failFWCodeMemDescAlloc:
-	if (RGX_IS_FEATURE_SUPPORTED(psDevInfo, MIPS))
-	{
-		RGXFreeTrampoline(psDeviceNode);
-	}
-failTrampolineMemDescAlloc:
 	return eError;
 }
 

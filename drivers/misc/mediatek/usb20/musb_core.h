@@ -45,6 +45,7 @@
 #include <linux/version.h>
 #include <linux/clk.h>
 #include <mt-plat/charger_type.h>
+#include <linux/workqueue.h>
 
 #if defined(CONFIG_MTK_CHARGER)
 extern enum charger_type mt_get_charger_type(void);
@@ -57,6 +58,10 @@ extern enum charger_type mt_get_charger_type(void);
 
 #ifdef CONFIG_MTK_MUSB_QMU_SUPPORT
 #include "mtk_qmu.h"
+#endif
+
+#if IS_ENABLED(CONFIG_IF_CB_MANAGER)
+#include <linux/usb/typec/manager/if_cb_manager.h>
 #endif
 
 #define SHARE_IRQ -1
@@ -197,6 +202,12 @@ enum musb_g_ep0_state {
 	MUSB_EP0_STAGE_STATUSOUT,	/* (after IN data) */
 	MUSB_EP0_STAGE_ACKWAIT,	/* after zlp, before statusin */
 } __packed;
+
+/* to check usb connection for Android auto */
+enum {
+	RELEASE	= 0,
+	NOTIFY	= 1,
+};
 
 /*
  * OTG protocol constants.  See USB OTG 1.3 spec,
@@ -362,6 +373,10 @@ struct musb {
 	irqreturn_t (*isr)(int irq, void *priv);
 	struct work_struct irq_work;
 	struct work_struct otg_notifier_work;
+#if defined(CONFIG_BATTERY_SAMSUNG)
+	struct work_struct set_vbus_current_work;
+	int usb_state;
+#endif
 	u16 hwvers;
 	struct delayed_work id_pin_work;
 	struct delayed_work host_work;
@@ -521,7 +536,21 @@ struct musb {
 #ifdef CONFIG_DUAL_ROLE_USB_INTF
 	struct dual_role_phy_instance *dr_usb;
 #endif /* CONFIG_DUAL_ROLE_USB_INTF */
+	/* to check usb connection for Android auto */
+	struct delayed_work usb_event_work;
+	ktime_t rst_time_before;
+	ktime_t rst_time_first;
+	int rst_err_cnt;
+	bool rst_err_noti;
+	bool event_state;
+#if IS_ENABLED(CONFIG_IF_CB_MANAGER)
+	struct usb_dev	*usb_d;
+	struct if_cb_manager	*man;
+#endif
 };
+
+/* to check usb connection for Android auto */
+#define ERR_RESET_CNT	3
 
 static inline struct musb *gadget_to_musb(struct usb_gadget *g)
 {

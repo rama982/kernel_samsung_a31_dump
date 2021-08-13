@@ -24,6 +24,9 @@ struct mt_usb_glue {
 extern unsigned int upmu_get_rgs_chrdet(void);
 extern bool upmu_is_chr_det(void);
 #else
+#ifndef kal_bool
+#define kal_bool bool
+#endif
 extern kal_bool upmu_is_chr_det(void);
 #endif
 

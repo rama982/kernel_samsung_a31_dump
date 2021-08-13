@@ -16,16 +16,18 @@
 #include "layering_rule_base.h"
 
 #ifdef CONFIG_MTK_ROUND_CORNER_SUPPORT
-#define MAX_PHY_OVL_CNT (12-2)
+#define MAX_PHY_OVL_CNT (3+2)
 #else
-#define MAX_PHY_OVL_CNT (12)
+#define MAX_PHY_OVL_CNT (4+3)
 #endif
 
 /* #define HAS_LARB_HRT */
 #ifndef CONFIG_MTK_ROUND_CORNER_SUPPORT
-#define HRT_AEE_LAYER_MASK 0xFFFFFFDF
+//#define HRT_AEE_LAYER_MASK 0xFFFFFFDF
+#define HRT_AEE_LAYER_MASK 0xFFFFFFF7
 #else
-#define HRT_AEE_LAYER_MASK 0xFFFFFFEF
+//#define HRT_AEE_LAYER_MASK 0xFFFFFFEF
+#define HRT_AEE_LAYER_MASK 0xFFFFFFFB
 #endif
 
 enum DISP_DEBUG_LEVEL {

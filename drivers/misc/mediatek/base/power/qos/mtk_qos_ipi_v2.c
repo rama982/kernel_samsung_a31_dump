@@ -19,9 +19,6 @@
 #endif
 
 #include "mtk_qos_bound.h"
-#ifdef QOS_PREFETCH_SUPPORT
-#include "mtk_qos_prefetch.h"
-#endif /* QOS_PREFETCH_SUPPORT */
 #include "mtk_qos_ipi.h"
 
 #if defined(CONFIG_MTK_TINYSYS_SSPM_SUPPORT)
@@ -41,7 +38,7 @@ static int qos_ipi_recv_thread(void *arg)
 {
 	struct qos_ipi_data *qos_ipi_d;
 
-	pr_info("%s start!\n", __func__);
+	pr_info("qos_ipi_recv_thread start!\n");
 	do {
 		mtk_ipi_recv(&sspm_ipidev, IPIR_I_QOS);
 
@@ -53,17 +50,6 @@ static int qos_ipi_recv_thread(void *arg)
 					qos_ipi_d->u.qos_bound.state,
 					get_qos_bound());
 			break;
-#ifdef QOS_PREFETCH_SUPPORT
-		case QOS_IPI_QOS_PREFETCH_CB:
-			prefetch_notifier_call_chain(
-					qos_ipi_d->u.qos_prefetch_cb.state,
-					NULL);
-			break;
-		case QOS_IPI_QOS_PREFETCH_UPDATE:
-			if (is_qos_prefetch_enabled())
-				qos_prefetch_update_all();
-			break;
-#endif /* QOS_PREFETCH_SUPPORT */
 		default:
 			pr_info("wrong QoS IPI command: %d\n", qos_ipi_d->cmd);
 		}

@@ -28,6 +28,10 @@ enum LCM_DSI_MODE_CON lcm_dsi_mode;
 #define LCD_HW_ID_STATUS_ERROR  0x03
 
 struct LCM_DRIVER *lcm_driver_list[] = {
+#if defined(CONFIG_SMCDSD_PANEL)
+	&smcdsd_panel_drv,
+#endif
+
 #if defined(ES6311_ANX6585_ZIGZAG_WXGA)
 	&es6311_anx6585_zigzag_wxga_lcm_drv,
 #endif
@@ -806,6 +810,10 @@ struct LCM_DRIVER *lcm_driver_list[] = {
 	&it6121_g156xw01v1_lvds_vdo_lcm_drv,
 #endif
 
+#if defined(EA8076G_FHDPLUS_DIS_CMD)
+	&ea8076g_fhdplus_dis_cmd_lcm_drv,
+#endif
+
 #if defined(ILI9806C_DSI_VDO_DJN_FWVGA)
 	&ili9806c_dsi_vdo_djn_fwvga_lcm_drv,
 #endif
@@ -1293,8 +1301,12 @@ struct LCM_DRIVER *lcm_driver_list[] = {
 	&ft8201_wuxga_dsi_vdo_boe_lcm_drv,
 #endif
 
-#if defined(FT8756_FHDP_DSI_VDO_AUO_RT4801)
-	&ft8756_fhdp_dsi_vdo_auo_rt4801_lcm_drv,
+#if defined(S6E3FC3_FHDP_CMD)
+	&s6e3fc3_fhdp_cmd_lcm_drv,
+#endif
+
+#if defined(TD4150_HDP_DSI_LM36274)
+	&td4150_hdp_dsi_lm36274_lcm_drv,
 #endif
 };
 

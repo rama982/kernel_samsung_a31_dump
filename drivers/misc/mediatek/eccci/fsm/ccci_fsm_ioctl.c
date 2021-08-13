@@ -17,11 +17,36 @@
 #endif
 
 #include "ccci_fsm_internal.h"
+#include "modem_sys.h"
 
 signed int __weak battery_get_bat_voltage(void)
 {
 	pr_debug("[ccci/dummy] %s is not supported!\n", __func__);
 	return 0;
+}
+
+static int ccci_md_log_level;
+
+#define MD_LOG_LEVEL_HIGH	0x4948
+#define MD_LOG_LEVEL_MID	0x494d
+#define MD_LOG_LEVEL_LOW	0x4f4c
+
+void drv_tri_panic_by_lvl(int md_id)
+{
+	if (ccci_md_log_level == MD_LOG_LEVEL_LOW) {
+		/* modem reset */
+		CCCI_NORMAL_LOG(md_id, FSM,
+			"Curr log level is low, trigger reset called by %s\n",
+			current->comm);
+		fsm_monitor_send_message(md_id, CCCI_MD_MSG_RESET_REQUEST, 0);
+	} else if ((ccci_md_log_level == MD_LOG_LEVEL_MID) ||
+		(ccci_md_log_level == MD_LOG_LEVEL_HIGH)) {
+		CCCI_NORMAL_LOG(md_id, FSM,
+			"ram dump done called by %s\n", current->comm);
+		panic("CP Crash");
+	} else
+		CCCI_NORMAL_LOG(md_id, FSM,
+			"md log level is invalid, do nothing\n");
 }
 
 static int fsm_md_data_ioctl(int md_id, unsigned int cmd, unsigned long arg)
@@ -43,7 +68,6 @@ static int fsm_md_data_ioctl(int md_id, unsigned int cmd, unsigned long arg)
 			return -EFAULT;
 		}
 #else
-		/*fix me :The buffer is not used in and can be deleted*/
 		ret = snprintf(buffer, sizeof(buffer), "%d", MD_GENERATION);
 		if (ret < 0 || ret >= sizeof(buffer)) {
 			CCCI_ERROR_LOG(md_id, FSM,
@@ -405,7 +429,6 @@ static int fsm_md_data_ioctl(int md_id, unsigned int cmd, unsigned long arg)
 					(unsigned int __user *)arg);
 			break;
 		}
-
 	default:
 		ret = -ENOTTY;
 		break;
@@ -420,6 +443,7 @@ long ccci_fsm_ioctl(int md_id, unsigned int cmd, unsigned long arg)
 	enum MD_STATE_FOR_USER state_for_user;
 	unsigned int data;
 	char *VALID_USER = "ccci_mdinit";
+	struct ccci_modem *md;
 
 	if (!ctl)
 		return -EINVAL;
@@ -491,6 +515,8 @@ long ccci_fsm_ioctl(int md_id, unsigned int cmd, unsigned long arg)
 		/* add check whether the user call md start ioctl is valid */
 		if (strncmp(current->comm,
 			VALID_USER, strlen(VALID_USER)) == 0) {
+			md = ccci_md_get_modem_by_id(md_id);
+			md->ccci_drv_trigger_upload = 0;
 			CCCI_NORMAL_LOG(md_id, FSM,
 				"MD start ioctl called by %s\n", current->comm);
 			ret = fsm_append_command(ctl, CCCI_COMMAND_START, 0);
@@ -585,6 +611,25 @@ long ccci_fsm_ioctl(int md_id, unsigned int cmd, unsigned long arg)
 		CCCI_NORMAL_LOG(md_id, FSM,
 			"get modem exception type=%d ret=%d\n",
 			ctl->ee_ctl.ex_type, ret);
+		break;
+	case CCCI_IOC_ENTER_UPLOAD:
+		drv_tri_panic_by_lvl(md_id);
+		break;
+	case CCCI_IOC_DRV_ENTER_UPLOAD:
+		md = ccci_md_get_modem_by_id(md_id);
+		md->ccci_drv_trigger_upload = 1;
+		CCCI_NORMAL_LOG(md_id, FSM, "drv trigger upload called by %s\n",
+			current->comm);
+		break;
+	case CCCI_IOC_LOG_LVL:
+		if (copy_from_user(&ccci_md_log_level, (void __user *)arg,
+			sizeof(unsigned int))) {
+			CCCI_NORMAL_LOG(md_id, FSM,
+				"cpy log level fail: copy_from_user fail!\n");
+			ret = -EFAULT;
+		}
+		CCCI_NORMAL_LOG(md_id, FSM,
+			"cpy log level value:0x%x\n", ccci_md_log_level);
 		break;
 	default:
 		ret = fsm_md_data_ioctl(md_id, cmd, arg);

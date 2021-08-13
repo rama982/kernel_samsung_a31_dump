@@ -15,11 +15,7 @@
 ifeq (y, $(filter y, $(CONFIG_MACH_MT6893)))
 MTK_PLATFORM := mt6885
 else
-ifeq (y, $(filter y, $(CONFIG_MACH_MT6833)))
-MTK_PLATFORM := mt6833
-else
 MTK_PLATFORM := $(CONFIG_MTK_PLATFORM)
-endif
 endif
 
 ifeq ($(CONFIG_MTK_ECCCI_DRIVER), y)
@@ -50,6 +46,8 @@ obj-$(CONFIG_MTK_MIX_DEVICES) +=  mixdev/
 ifeq ($(CONFIG_MTK_ECCCI_C2K), y)
 ccci-y += modem_sys3.o
 endif
+
+ccci-$(CONFIG_MTK_SRIL_SUPPORT) += modem_io_device.o
 
 # platform code
 obj-y += $(subst ",,$(MTK_PLATFORM))/

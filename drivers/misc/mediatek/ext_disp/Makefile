@@ -11,12 +11,7 @@
 # GNU General Public License for more details.
 #
 
-# separate mt6833 from family mt6853
-ifeq (y, $(filter y, $(CONFIG_MACH_MT6833)))
-PLATFORM := mt6833
-else
 PLATFORM := $(subst ",,$(CONFIG_MTK_PLATFORM))
-endif
 
 # mt6761 and mt6765 co-folder
 ifeq ($(PLATFORM),mt6761)

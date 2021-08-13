@@ -100,6 +100,7 @@
 #include "disp_partial.h"
 #include "ddp_aal.h"
 #include "ddp_gamma.h"
+#include "mtk_notify.h"
 
 #define MMSYS_CLK_LOW (0)
 #define MMSYS_CLK_HIGH (1)
@@ -176,6 +177,9 @@ wait_queue_head_t primary_display_present_fence_wq;
 atomic_t primary_display_pt_fence_update_event = ATOMIC_INIT(0);
 static unsigned int _need_lfr_check(void);
 
+struct mtk_uevent_dev uevent_data;
+EXPORT_SYMBOL(uevent_data);
+
 #ifdef CONFIG_MTK_DISPLAY_120HZ_SUPPORT
 static int od_need_start;
 #endif
@@ -228,7 +232,7 @@ static void _primary_path_unlock(const char *caller)
 
 	mutex_time_end = sched_clock();
 	mutex_time_period = mutex_time_end - mutex_time_start;
-	if (mutex_time_period > 100000000) {
+	if (mutex_time_period > 300000000) {
 		DISPCHECK("mutex_release_timeout1 <%lld ns>\n",
 			  mutex_time_period);
 		dump_stack();
@@ -237,8 +241,8 @@ static void _primary_path_unlock(const char *caller)
 
 	mutex_time_end1 = sched_clock();
 	mutex_time_period1 = mutex_time_end1 - mutex_time_start;
-	if ((mutex_time_period < 100000000 && mutex_time_period1 > 100000000) ||
-	   (mutex_time_period < 100000000 && mutex_time_period1 < 0)) {
+	if ((mutex_time_period < 300000000 && mutex_time_period1 > 300000000) ||
+	   (mutex_time_period < 300000000 && mutex_time_period1 < 0)) {
 		DISPCHECK("mutex_release_timeout2 <%lld ns>,<%lld ns>\n",
 			mutex_time_period1, mutex_time_period);
 		dump_stack();
@@ -3691,6 +3695,9 @@ int primary_display_init(char *lcm_name, unsigned int lcm_fps,
 	disp_switch_data.state = DISP_ALIVE;
 	ret = switch_dev_register(&disp_switch_data);
 #endif
+
+	uevent_data.name = "lcm_disconnect";
+	uevent_dev_register(&uevent_data);
 
 	DISPCHECK("%s: done\n", __func__);
 done:

@@ -29,6 +29,8 @@
 #include "cam_cal_list.h"
 #include "eeprom_i2c_dev.h"
 #include "eeprom_i2c_common_driver.h"
+#include "imgsensor_sysfs.h"
+#include "kd_imgsensor_sysfs_adapter.h"
 #include <linux/dma-mapping.h>
 #ifdef CONFIG_COMPAT
 /* 64 bit */
@@ -528,6 +530,64 @@ static long EEPROM_drv_compat_ioctl
 
 #endif
 
+long eeprom_ioctl_control_command(struct stCAM_CAL_INFO_STRUCT *camCalInfo,
+			u8 *retBuf, struct stCAM_CAL_CMD_INFO_STRUCT *camCalCmdInfo)
+{
+	const struct imgsensor_vendor_rom_addr *rom_addr = NULL;
+	int i = 0;
+	u32 calData = 0;
+
+	rom_addr = IMGSENSOR_SYSGET_ROM_ADDR_BY_ID(camCalInfo->deviceID, camCalInfo->sensorID);
+	if (rom_addr == NULL) {
+		pr_err("[%s] rom_addr is NULL", __func__);
+		return -EFAULT;
+	}
+
+	switch (camCalInfo->command) {
+	case CAM_CAL_COMMAND_EEPROM_LIMIT_SIZE:
+		calData = camCalCmdInfo->maxEepromSize;
+		break;
+	case CAM_CAL_COMMAND_CAL_SIZE:
+		calData = rom_addr->rom_max_cal_size;
+		break;
+	case CAM_CAL_COMMAND_CONVERTED_CAL_SIZE:
+		calData = rom_addr->rom_converted_max_cal_size;
+		break;
+	case CAM_CAL_COMMAND_AWB_ADDR:
+		calData = rom_addr->rom_awb_cal_data_start_addr;
+		break;
+	case CAM_CAL_COMMAND_CONVERTED_AWB_ADDR:
+		if (rom_addr->converted_cal_addr == NULL)
+			return -EINVAL;
+		calData = rom_addr->converted_cal_addr->rom_awb_cal_data_start_addr;
+		break;
+	case CAM_CAL_COMMAND_LSC_ADDR:
+		calData = rom_addr->rom_shading_cal_data_start_addr;
+		break;
+	case CAM_CAL_COMMAND_CONVERTED_LSC_ADDR:
+		if (rom_addr->converted_cal_addr == NULL)
+			return -EINVAL;
+		calData = rom_addr->converted_cal_addr->rom_shading_cal_data_start_addr;
+		break;
+	case CAM_CAL_COMMAND_MODULE_INFO_ADDR:
+		calData = rom_addr->rom_header_main_module_info_start_addr;
+		break;
+	case CAM_CAL_COMMAND_NONE:
+	case CAM_CAL_COMMAND_BAYERFORMAT:
+	case CAM_CAL_COMMAND_MEMTYPE:
+		pr_debug("[%s] Not used anymore", __func__);
+		return -EINVAL;
+	default:
+		pr_debug("[%s] No such command %d\n", __func__, camCalInfo->command);
+		return -EINVAL;
+	}
+	for (i = 0; i < camCalInfo->u4Length; i++) {
+		retBuf[i] = calData & 0xFF;
+		calData = calData >> 8;
+	}
+	return 0;
+}
+
 #define NEW_UNLOCK_IOCTL
 #ifndef NEW_UNLOCK_IOCTL
 static int EEPROM_drv_ioctl(struct inode *a_pstInode,
@@ -554,7 +614,6 @@ static long EEPROM_drv_ioctl(struct file *file,
 		pBuff = kmalloc(sizeof(struct stCAM_CAL_INFO_STRUCT),
 					GFP_KERNEL);
 		if (pBuff == NULL) {
-
 			pr_debug("ioctl allocate pBuff mem failed\n");
 			return -ENOMEM;
 		}
@@ -636,7 +695,9 @@ static long EEPROM_drv_ioctl(struct file *file,
 			if (pcmdInf->writeCMDFunc != NULL) {
 				i4RetValue = pcmdInf->writeCMDFunc(
 					pcmdInf->client,
-					ptempbuf->u4Offset, pu1Params,
+					ptempbuf,
+					ptempbuf->u4Offset,
+					pu1Params,
 					ptempbuf->u4Length);
 			} else
 				pr_debug("pcmdInf->writeCMDFunc == NULL\n");
@@ -670,6 +731,15 @@ static long EEPROM_drv_ioctl(struct file *file,
 			ptempbuf->sensorID,
 			ptempbuf->deviceID);
 
+		if (ptempbuf->command != CAM_CAL_COMMAND_NONE) {
+			if (eeprom_ioctl_control_command(ptempbuf, pu1Params, pcmdInf) < 0) {
+				kfree(pBuff);
+				kfree(pu1Params);
+				return -EFAULT;
+			}
+			break;
+		}
+
 		/* Check the max size if specified */
 		if (pcmdInf != NULL &&
 		    (pcmdInf->maxEepromSize != 0) &&
@@ -694,19 +764,28 @@ static long EEPROM_drv_ioctl(struct file *file,
 		}
 
 		if (pcmdInf != NULL) {
-			if (pcmdInf->readCMDFunc != NULL)
+			if (pcmdInf->readCMDFunc != NULL) {
 				i4RetValue =
 					pcmdInf->readCMDFunc(pcmdInf->client,
+							  ptempbuf,
 							  ptempbuf->u4Offset,
 							  pu1Params,
 							  ptempbuf->u4Length);
-			else {
+			} else {
 				pr_debug("pcmdInf->readCMDFunc == NULL\n");
 				kfree(pBuff);
 				kfree(pu1Params);
 				return -EFAULT;
 			}
 		}
+
+		if (IMGSENSOR_SYSFS_UPDATE(pu1Params, ptempbuf->deviceID, ptempbuf->sensorID,
+			ptempbuf->u4Offset, ptempbuf->u4Length, i4RetValue) < 0) {
+			kfree(pBuff);
+			kfree(pu1Params);
+			return -EFAULT;
+		}
+
 #ifdef CAM_CALGETDLT_DEBUG
 		do_gettimeofday(&ktv2);
 		if (ktv2.tv_sec > ktv1.tv_sec)
@@ -721,7 +800,7 @@ static long EEPROM_drv_ioctl(struct file *file,
 
 	default:
 		pr_debug("No CMD\n");
-		i4RetValue = -EPERM;
+		i4RetValue = -EINVAL;
 		break;
 	}
 
@@ -755,7 +834,6 @@ static int EEPROM_drv_open(struct inode *a_pstInode, struct file *a_pstFile)
 		g_drvOpened = 1;
 		spin_unlock(&g_spinLock);
 	}
-	mdelay(2);
 
 	return ret;
 }

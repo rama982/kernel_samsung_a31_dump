@@ -19,6 +19,7 @@
 #include <linux/sched.h>
 #include <linux/jiffies.h>
 #include <linux/version.h>
+#include <linux/usb_notify.h>
 
 #include <linux/sched/rt.h>
 #include <uapi/linux/sched/types.h>
@@ -28,6 +29,7 @@
 #include "inc/tcpci.h"
 #include "inc/pd_policy_engine.h"
 #include "inc/pd_dpm_core.h"
+#include <mt-plat/mtk_boot.h>
 
 #ifdef CONFIG_USB_PD_POSTPONE_VDM
 static void postpone_vdm_event(struct tcpc_device *tcpc_dev)
@@ -783,6 +785,8 @@ bool pd_put_cc_attached_event(
 
 void pd_put_cc_detached_event(struct tcpc_device *tcpc_dev)
 {
+	unsigned int boot_mode = get_boot_mode();
+
 	mutex_lock(&tcpc_dev->access_lock);
 
 #ifdef CONFIG_USB_POWER_DELIVERY
@@ -792,8 +796,16 @@ void pd_put_cc_detached_event(struct tcpc_device *tcpc_dev)
 #endif /* CONFIG_TYPEC_WAIT_BC12 */
 #endif /* CONFIG_USB_POWER_DELIVERY */
 
-	tcpci_notify_hard_reset_state(
-		tcpc_dev, TCP_HRESET_RESULT_FAIL);
+#ifdef CONFIG_KPOC_GET_SOURCE_CAP_TRY
+	if ((tcpc_dev->pd_port.error_recovery_once == 1) &&
+		(boot_mode == KERNEL_POWER_OFF_CHARGING_BOOT ||
+		boot_mode == LOW_POWER_OFF_CHARGING_BOOT))
+		tcpci_notify_hard_reset_state(
+			tcpc_dev, TCP_ERROR_RECOVERY_KPOC);
+	else
+#endif /*CONFIG_KPOC_GET_SOURCE_CAP_TRY*/
+		tcpci_notify_hard_reset_state(
+			tcpc_dev, TCP_HRESET_RESULT_FAIL);
 
 	__pd_event_buf_reset(tcpc_dev, TCP_DPM_RET_DROP_CC_DETACH);
 	__pd_put_hw_event(tcpc_dev, PD_HW_CC_DETACHED);
@@ -819,12 +831,21 @@ void pd_put_cc_detached_event(struct tcpc_device *tcpc_dev)
 
 void pd_put_recv_hard_reset_event(struct tcpc_device *tcpc_dev)
 {
+#ifdef CONFIG_USB_NOTIFY_PROC_LOG
+	int event = 0;
+#endif
+
 	mutex_lock(&tcpc_dev->access_lock);
 
 	tcpci_notify_hard_reset_state(
 		tcpc_dev, TCP_HRESET_SIGNAL_RECV);
 
 	tcpc_dev->pd_transmit_state = PD_TX_STATE_HARD_RESET;
+
+#ifdef CONFIG_USB_NOTIFY_PROC_LOG
+	event = NOTIFY_EXTRA_HARDRESET_RECEIVED;
+	store_usblog_notify(NOTIFY_EXTRA, (void *)&event, NULL);
+#endif
 
 	if ((!tcpc_dev->pd_hard_reset_event_pending) &&
 		(!tcpc_dev->pd_wait_pe_idle) &&
@@ -1096,11 +1117,20 @@ void pd_notify_pe_wait_vbus_once(struct pd_port *pd_port, int wait_evt)
 void pd_notify_pe_error_recovery(struct pd_port *pd_port)
 {
 	struct tcpc_device *tcpc_dev = pd_port->tcpc_dev;
+	unsigned int boot_mode = get_boot_mode();
 
 	mutex_lock(&tcpc_dev->access_lock);
 
-	tcpci_notify_hard_reset_state(
-		tcpc_dev, TCP_HRESET_RESULT_FAIL);
+#ifdef CONFIG_KPOC_GET_SOURCE_CAP_TRY
+	if (pd_port->error_recovery_once == 1 &&
+		(boot_mode == KERNEL_POWER_OFF_CHARGING_BOOT ||
+		boot_mode == LOW_POWER_OFF_CHARGING_BOOT))
+		tcpci_notify_hard_reset_state(
+			tcpc_dev, TCP_ERROR_RECOVERY_KPOC);
+	else
+#endif /*CONFIG_KPOC_GET_SOURCE_CAP_TRY*/
+		tcpci_notify_hard_reset_state(
+			tcpc_dev, TCP_HRESET_RESULT_FAIL);
 
 	tcpc_dev->pd_wait_pr_swap_complete = false;
 	__tcp_event_buf_reset(tcpc_dev, TCP_DPM_RET_DROP_ERROR_REOCVERY);
@@ -1160,10 +1190,17 @@ void pd_notify_pe_hard_reset_completed(struct pd_port *pd_port)
 void pd_notify_pe_send_hard_reset(struct pd_port *pd_port)
 {
 	struct tcpc_device *tcpc_dev = pd_port->tcpc_dev;
+#ifdef CONFIG_USB_NOTIFY_PROC_LOG
+	int event = 0;
+#endif
 
 	mutex_lock(&tcpc_dev->access_lock);
 	tcpc_dev->pd_transmit_state = PD_TX_STATE_WAIT_HARD_RESET;
 	tcpci_notify_hard_reset_state(tcpc_dev, TCP_HRESET_SIGNAL_SEND);
+#ifdef CONFIG_USB_NOTIFY_PROC_LOG
+	event = NOTIFY_EXTRA_HARDRESET_SENT;
+	store_usblog_notify(NOTIFY_EXTRA, (void *)&event, NULL);
+#endif
 	mutex_unlock(&tcpc_dev->access_lock);
 }
 

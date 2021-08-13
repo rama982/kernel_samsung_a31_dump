@@ -266,6 +266,9 @@ enum {
 	/* HardReset failed because detach or error recovery */
 	TCP_HRESET_RESULT_FAIL,
 
+	/* ERROR Recovery because in power off charge not receive source cap*/
+	TCP_ERROR_RECOVERY_KPOC,
+
 	/* HardReset signal from Local Policy Engine */
 	TCP_HRESET_SIGNAL_SEND,
 

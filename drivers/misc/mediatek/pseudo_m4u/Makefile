@@ -29,6 +29,10 @@ ifeq ($(CONFIG_MICROTRUST_TEE_SUPPORT), y)
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include/trustzone/m4u
 include $(srctree)/drivers/misc/mediatek/teei/Makefile.include
 endif
+ifeq ($(CONFIG_TEEGRIS_TEE_SUPPORT),y)
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include/trustzone/m4u
+ccflags-y += -I$(srctree)/drivers/misc/tzdev/include/tzdev
+endif
 ifeq ($(CONFIG_MTK_CAM_GENIEZONE_SUPPORT), y)
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include/trustzone/m4u
 endif
@@ -61,6 +65,8 @@ obj-y += m4u_hw_$(MTK_PLATFORM).o
 endif
 
 ifeq ($(CONFIG_MTK_TRUSTED_MEMORY_SUBSYSTEM),y)
+include $(srctree)/drivers/misc/mediatek/trusted_mem/Makefile.include
+else ifeq ($(CONFIG_MTK_SECURE_MEM_SUPPORT),y)
 include $(srctree)/drivers/misc/mediatek/trusted_mem/Makefile.include
 endif
 obj-$(CONFIG_FPGA_EARLY_PORTING) += pseudo_m4u_ut.o

@@ -199,12 +199,29 @@ int DSI_set_roi(int x, int y);
 int DSI_check_roi(void);
 int ddp_dsi_trigger(enum DISP_MODULE_ENUM module, void *cmdq);
 void DSI_set_cmdq_V2(enum DISP_MODULE_ENUM module, struct cmdqRecStruct *cmdq,
-		     unsigned int cmd, unsigned char count,
+		     unsigned int cmd, unsigned int count,
 		     unsigned char *para_list, unsigned char force_update);
 
 int dsi_enable_irq(enum DISP_MODULE_ENUM module, void *handle,
 		   unsigned int enable);
 int ddp_dsi_power_on(enum DISP_MODULE_ENUM module, void *cmdq_handle);
+unsigned int _is_power_on_status(enum DISP_MODULE_ENUM module);
+int ddp_dsi_read_lcm_cmdq(enum DISP_MODULE_ENUM module,
+		cmdqBackupSlotHandle *read_Slot,
+		struct cmdqRecStruct *cmdq_trigger_handle,
+		struct ddp_lcm_read_cmd_table *read_table);
+int ddp_dsi_write_lcm_cmdq(enum DISP_MODULE_ENUM module,
+		struct cmdqRecStruct *cmdq,
+		unsigned char cmd, unsigned int count,
+		unsigned char *para_list);
+void DSI_dcs_set_lcm_reg_v4(enum DISP_MODULE_ENUM module,
+	bool hs, struct LCM_setting_table_V3 *para_tbl, unsigned int size,
+	unsigned char force_update);
+UINT32 DSI_dcs_read_lcm_reg_v4(enum DISP_MODULE_ENUM module,
+	UINT8 cmd, UINT8 *user_buffer, UINT8 buffer_size, bool sendhs,
+	UINT8 offset);
+int ddp_dsi_build_cmdq(enum DISP_MODULE_ENUM module,
+	void *cmdq_trigger_handle, enum CMDQ_STATE state);
 void ddp_dump_and_reset_dsi0(void);
 
 #ifdef __cplusplus

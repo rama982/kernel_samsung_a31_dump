@@ -52,6 +52,17 @@
 #include "hif/ccci_hif_ccif.h"
 #endif
 
+#if (MD_GENERATION >= 6297)
+#include <mt-plat/mtk_ccci_common.h>
+#include "modem_secure_base.h"
+#endif
+
+#include <linux/arm-smccc.h>
+#include <linux/soc/mediatek/mtk_sip_svc.h>
+
+#define MTK_SIP_CCCI_CONTROL_ARCH32		0x82000505
+#define MTK_SIP_CCCI_CONTROL_ARCH64		0xC2000505
+
 #define TAG "mcd"
 
 void ccif_enable_irq(struct ccci_modem *md)
@@ -178,6 +189,8 @@ static void md_cd_exception(struct ccci_modem *md, enum HIF_EX_STAGE stage)
 
 	CCCI_ERROR_LOG(md->index, TAG, "MD exception HIF %d\n", stage);
 	ccci_event_log("md%d:MD exception HIF %d\n", md->index, stage);
+
+	__pm_wakeup_event(&md->trm_wake_lock, jiffies_to_msecs(50 * HZ));
 	/* in exception mode, MD won't sleep, so we do not
 	 * need to request MD resource first
 	 */
@@ -241,6 +254,8 @@ static void polling_ready(struct ccci_modem *md, int step)
 		if (md_info->channel_id & (1 << step)) {
 			CCCI_DEBUG_LOG(md->index, TAG,
 				"poll RCHNUM %d\n", md_info->channel_id);
+			ccif_write32(md_info->ap_ccif_base,
+				APCCIF_ACK, (1 << step));
 			return;
 		}
 		msleep(time_once);
@@ -256,13 +271,15 @@ static int md_cd_ee_handshake(struct ccci_modem *md, int timeout)
 	 * D2H_EXCEPTION_CLEARQ_DONE together
 	 */
 	/*polling_ready(md_ctrl, D2H_EXCEPTION_INIT);*/
+	__pm_wakeup_event(&md->trm_wake_lock, jiffies_to_msecs(20 * HZ));
 	md_cd_exception(md, HIF_EX_INIT);
+	__pm_wakeup_event(&md->trm_wake_lock, jiffies_to_msecs(20 * HZ));
 	polling_ready(md, D2H_EXCEPTION_INIT_DONE);
 	md_cd_exception(md, HIF_EX_INIT_DONE);
-
+	__pm_wakeup_event(&md->trm_wake_lock, jiffies_to_msecs(20 * HZ));
 	polling_ready(md, D2H_EXCEPTION_CLEARQ_DONE);
 	md_cd_exception(md, HIF_EX_CLEARQ_DONE);
-
+	__pm_wakeup_event(&md->trm_wake_lock, jiffies_to_msecs(20 * HZ));
 	polling_ready(md, D2H_EXCEPTION_ALLQ_RESET);
 	md_cd_exception(md, HIF_EX_ALLQ_RESET);
 
@@ -419,6 +436,26 @@ int __weak md_start_platform(struct ccci_modem *md)
 	return 0;
 }
 
+
+static int ccci_get_md_sec_smem_size_and_update(void)
+{
+#ifdef ENABLE_MD_SEC_SMEM
+	struct arm_smccc_res res;
+
+#ifdef __aarch64__
+	arm_smccc_smc(MTK_SIP_CCCI_CONTROL_ARCH64,
+				UPDATE_MD_SEC_SMEM, 0, 0, 0, 0, 0, 0, &res);
+#else
+	arm_smccc_smc(MTK_SIP_CCCI_CONTROL_ARCH32,
+				UPDATE_MD_SEC_SMEM, 0, 0, 0, 0, 0, 0, &res);
+#endif
+
+	return (int)res.a0;
+#else
+	return 0;
+#endif
+}
+
 static int md_cd_start(struct ccci_modem *md)
 {
 	int ret = 0;
@@ -483,6 +520,8 @@ static int md_cd_start(struct ccci_modem *md)
 	md->per_md_data.md_dbg_dump_flag = MD_DBG_DUMP_AP_REG;
 
 	/* 7. let modem go */
+	/* Notify ATF update md sec smem info */
+	ccci_get_md_sec_smem_size_and_update();
 	md_cd_let_md_go(md);
 	wdt_enable_irq(md);
 	ccci_md_hif_start(md, 2);
@@ -639,6 +678,8 @@ static int md_cd_stop(struct ccci_modem *md, unsigned int stop_type)
 {
 	int ret = 0;
 	struct md_sys1_info *md_info = (struct md_sys1_info *)md->private_data;
+	int i;
+	unsigned int rx_ch_bitmap;
 
 	CCCI_NORMAL_LOG(md->index, TAG,
 		"modem is power off, stop_type=%d\n", stop_type);
@@ -659,6 +700,23 @@ static int md_cd_stop(struct ccci_modem *md, unsigned int stop_type)
 	 */
 	ccci_reset_ccif_hw(md->index, AP_MD1_CCIF,
 		md_info->ap_ccif_base, md_info->md_ccif_base);
+
+	rx_ch_bitmap = ccif_read32(md_info->md_ccif_base, APCCIF_RCHNUM);
+	if (rx_ch_bitmap) {
+		CCCI_NORMAL_LOG(md->index, TAG,
+			"CCIF rx bitmap: 0x%x\n", rx_ch_bitmap);
+		for (i = 0; i < CCIF_CH_NUM; i++) {
+			/* Ack one by one */
+			if (rx_ch_bitmap & (1 << i))
+				ccif_write32(md_info->md_ccif_base,
+					APCCIF_ACK, (1 << i));
+		}
+		rx_ch_bitmap =
+			ccif_read32(md_info->md_ccif_base, APCCIF_RCHNUM);
+		CCCI_NORMAL_LOG(md->index, TAG,
+			"CCIF rx bitmap: 0x%x(after ack)\n", rx_ch_bitmap);
+	}
+
 	md_cd_check_emi_state(md, 0);	/* Check EMI after */
 
 	/*disable cldma & ccif clk*/
@@ -827,12 +885,14 @@ static void config_ap_runtime_data_v2(struct ccci_modem *md,
 	ap_feature->tail_pattern = AP_FEATURE_QUERY_PATTERN;
 }
 
+
 static void config_ap_runtime_data_v2_1(struct ccci_modem *md,
 	struct ap_query_md_feature_v2_1 *ap_feature)
 {
 	struct ccci_smem_region *runtime_data =
 		ccci_md_get_smem_by_user_id(md->index,
 			SMEM_USER_RAW_RUNTIME_DATA);
+	int sec_smem_size = ccci_get_md_sec_smem_size_and_update();
 
 	ap_feature->head_pattern = AP_FEATURE_QUERY_PATTERN;
 	/*AP query MD feature set */
@@ -848,7 +908,7 @@ static void config_ap_runtime_data_v2_1(struct ccci_modem *md,
 	ap_feature->noncached_mpu_start_addr =
 		md->mem_layout.md_bank4_noncacheable_total.base_md_view_phy;
 	ap_feature->noncached_mpu_total_size =
-		md->mem_layout.md_bank4_noncacheable_total.size;
+		md->mem_layout.md_bank4_noncacheable_total.size + sec_smem_size;
 	ap_feature->cached_mpu_start_addr =
 		md->mem_layout.md_bank4_cacheable_total.base_md_view_phy;
 	ap_feature->cached_mpu_total_size =
@@ -1192,12 +1252,7 @@ static int md_cd_dump_info(struct ccci_modem *md,
 					*(curr_p + 2), *(curr_p + 3));
 		}
 	}
-	if (flag & DUMP_FLAG_IMAGE) {
-		CCCI_MEM_LOG_TAG(md->index, TAG, "Dump MD image memory\n");
-		ccci_util_mem_dump(md->index, CCCI_DUMP_MEM_DUMP,
-			(void *)md->mem_layout.md_bank0.base_ap_view_vir,
-			MD_IMG_DUMP_SIZE);
-	}
+
 	if (flag & DUMP_FLAG_LAYOUT) {
 		CCCI_MEM_LOG_TAG(md->index, TAG, "Dump MD layout struct\n");
 		ccci_util_mem_dump(md->index, CCCI_DUMP_MEM_DUMP,

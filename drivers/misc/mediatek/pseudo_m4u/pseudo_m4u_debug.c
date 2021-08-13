@@ -1020,16 +1020,18 @@ static int m4u_debug_set(void *data, u64 val)
 		}
 	}
 	break;
-#ifdef M4U_TEE_SERVICE_ENABLE
+#if defined(PSEUDO_M4U_TEE_SERVICE_ENABLE) || \
+	defined(M4U_TEE_SERVICE_ENABLE)
 	case 50:
 	{
-#if defined(CONFIG_TRUSTONIC_TEE_SUPPORT) &&   \
+#if (defined(CONFIG_TRUSTONIC_TEE_SUPPORT) || \
+		defined(CONFIG_TEEGRIS_TEE_SUPPORT)) && \
 		defined(CONFIG_MTK_TEE_GP_SUPPORT)
-		u32 sec_handle = 0;
-		u32 refcount;
-
-		secmem_api_alloc(0, 0x1000, &refcount,
-			&sec_handle, "m4u_ut", 0);
+		//u32 sec_handle = 0;
+		//u32 refcount;
+		//disable firstly, for enable SVP, avoid build error
+		//secmem_api_alloc(0, 0x1000, &refcount,
+		//&sec_handle, "m4u_ut", 0);
 #elif defined(CONFIG_MTK_IN_HOUSE_TEE_SUPPORT)
 		u32 sec_handle = 0;
 		u32 refcount = 0;

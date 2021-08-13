@@ -21,6 +21,10 @@
 #include <linux/list.h>
 #include <linux/power_supply.h>
 #include <linux/workqueue.h>
+#ifdef CONFIG_TYPEC
+#include <linux/usb/typec.h>
+#endif /* CONFIG_TYPEC */
+#include <linux/sec_batt.h>
 
 #include "inc/tcpci.h"
 #include "inc/tcpci_typec.h"
@@ -61,6 +65,7 @@ static struct device_attribute tcpc_device_attributes[] = {
 	TCPC_DEVICE_ATTR(timer, 0664),
 	TCPC_DEVICE_ATTR(caps_info, 0444),
 	TCPC_DEVICE_ATTR(pe_ready, 0444),
+	TCPC_DEVICE_ATTR(ss_factory, 0666),
 };
 
 enum {
@@ -71,6 +76,7 @@ enum {
 	TCPC_DESC_TIMER,
 	TCPC_DESC_CAP_INFO,
 	TCPC_DESC_PE_READY,
+	TCPC_DESC_SS_FACTORY,
 };
 
 static struct attribute *__tcpc_attrs[ARRAY_SIZE(tcpc_device_attributes) + 1];
@@ -235,6 +241,11 @@ static ssize_t tcpc_show_property(struct device *dev,
 		}
 		break;
 #endif
+	case TCPC_DESC_SS_FACTORY:
+		ret = snprintf(buf, 256, "en = %d\n", tcpc->ss_factory);
+		if (ret < 0)
+			break;
+		break;
 	default:
 		break;
 	}
@@ -360,6 +371,20 @@ static ssize_t tcpc_store_property(struct device *dev,
 		}
 		break;
 	#endif /* CONFIG_USB_POWER_DELIVERY */
+	case TCPC_DESC_SS_FACTORY:
+		ret = get_parameters((char *)buf, &val, 1);
+		if (ret < 0) {
+			dev_err(dev, "get parameters fail\n");
+			return -EINVAL;
+		}
+		tcpc->ss_factory = val;
+		ret = tcpci_ss_factory(tcpc);
+		if (ret < 0) {
+			dev_err(dev, "set ss factory %d fail\n",
+				tcpc->ss_factory);
+			return ret;
+		}
+		break;
 	default:
 		break;
 	}
@@ -463,11 +488,17 @@ struct tcpc_device *tcpc_device_register(struct device *parent,
 	pd_core_init(tcpc);
 #endif /* CONFIG_USB_POWER_DELIVERY */
 
+#ifdef CONFIG_TYPEC
+	ret = tcpc_typec_class_init(tcpc);
+	if (ret < 0)
+		dev_err(&tcpc->dev, "typec class usb init fail\n");
+#else
 #ifdef CONFIG_DUAL_ROLE_USB_INTF
 	ret = tcpc_dual_role_phy_init(tcpc);
 	if (ret < 0)
 		dev_err(&tcpc->dev, "dual role usb init fail\n");
 #endif /* CONFIG_DUAL_ROLE_USB_INTF */
+#endif /* CONFIG_TYPEC */
 
 	return tcpc;
 }
@@ -476,6 +507,11 @@ EXPORT_SYMBOL(tcpc_device_register);
 static int tcpc_device_irq_enable(struct tcpc_device *tcpc)
 {
 	int ret;
+#ifdef CONFIG_KPOC_GET_SOURCE_CAP_TRY
+	int seconds = 0;
+#else
+	int seconds = 10;
+#endif
 
 	if (!tcpc->ops->init) {
 		pr_notice("%s Please implment tcpc ops init function\n",
@@ -498,8 +534,11 @@ static int tcpc_device_irq_enable(struct tcpc_device *tcpc)
 		return ret;
 	}
 
+	if (lpcharge)
+		seconds = 0;
+
 	schedule_delayed_work(
-		&tcpc->event_init_work, msecs_to_jiffies(10*1000));
+		&tcpc->event_init_work, msecs_to_jiffies(seconds*1000));
 
 	pr_info("%s : tcpc irq enable OK!\n", __func__);
 	return 0;
@@ -555,7 +594,7 @@ static int bat_nb_call_func(
 	}
 
 	if (val == PSY_EVENT_PROP_CHANGED &&
-		strcmp(psy->desc->name, "battery") == 0)
+		strcmp(psy->desc->name, "mtk-fg-battery") == 0)
 		schedule_delayed_work(&tcpc->bat_update_work, 0);
 	return NOTIFY_OK;
 }
@@ -581,7 +620,7 @@ static void tcpc_event_init_work(struct work_struct *work)
 
 #ifdef CONFIG_USB_PD_REV30
 	INIT_DELAYED_WORK(&tcpc->bat_update_work, bat_update_work_func);
-	tcpc->bat_psy = power_supply_get_by_name("battery");
+	tcpc->bat_psy = power_supply_get_by_name("mtk-fg-battery");
 	if (!tcpc->bat_psy) {
 		TCPC_ERR("%s get battery psy fail\n", __func__);
 		return;
@@ -834,9 +873,13 @@ void tcpc_device_unregister(struct device *dev, struct tcpc_device *tcpc)
 	wakeup_source_trash(&tcpc->dettach_temp_wake_lock);
 	wakeup_source_trash(&tcpc->attach_wake_lock);
 
+#ifdef CONFIG_TYPEC
+	typec_unregister_port(tcpc->port);
+#else
 #ifdef CONFIG_DUAL_ROLE_USB_INTF
 	devm_dual_role_instance_unregister(&tcpc->dev, tcpc->dr_usb);
 #endif /* CONFIG_DUAL_ROLE_USB_INTF */
+#endif /* CONFIG_TYPEC */
 
 	device_unregister(&tcpc->dev);
 
@@ -956,6 +999,11 @@ static int __tcpc_class_complete_work(struct device *dev, void *data)
 #endif /* CONFIG_RECV_BAT_ABSENT_NOTIFY */
 #endif /* CONFIG_USB_POWER_DELIVERY */
 	}
+
+#if IS_ENABLED(CONFIG_PDIC_NOTIFIER)
+	pdic_core_register_chip(tcpc->ppdic_data);
+#endif
+
 	return 0;
 }
 

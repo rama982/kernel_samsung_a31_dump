@@ -505,10 +505,11 @@ static void print_disp_info_to_log_buffer(struct disp_layer_info *disp_info)
 		"Last hrt query data[start]\n");
 	for (i = 0 ; i < 2 ; i++) {
 		n += snprintf(status_buf + n, LOGGER_BUFFER_SIZE - n,
-			"HRT D%d/M%d/LN%d/hrt_num:%d/G(%d,%d)/fps:%d\n",
+			"HRT D%d/M%d/LN%d/hrt_num:%d/G(%d,%d)/fps:%d/config_id:%d\n",
 			i, disp_info->disp_mode[i], disp_info->layer_num[i],
 			disp_info->hrt_num,	disp_info->gles_head[i],
-			disp_info->gles_tail[i], l_rule_info->primary_fps);
+			disp_info->gles_tail[i], l_rule_info->primary_fps,
+			disp_info->active_config_id[0]);
 
 		for (j = 0 ; j < disp_info->layer_num[i] ; j++) {
 			layer_info = &disp_info->input_config[i][j];
@@ -1809,6 +1810,15 @@ int layering_rule_start(struct disp_layer_info *disp_info_user,
 		return -EFAULT;
 	}
 
+#ifdef CONFIG_MTK_HIGH_FRAME_RATE
+	/*DynFPS, only primary display support*/
+	/*l_rule_info->active_config_id = disp_info_user->active_config_id[0];*/
+	if (g_force_cfg) {
+		disp_info_user->active_config_id[0] = g_force_cfg_id;
+	}
+	/*primary_display_update_cfg_id(disp_info_user->active_config_id[0]);*/
+#endif
+
 	if (check_disp_info(disp_info_user) < 0) {
 		DISPERR("check_disp_info fail\n");
 		return -EFAULT;
@@ -1888,6 +1898,9 @@ int layering_rule_start(struct disp_layer_info *disp_info_user,
 
 	ret = dispatch_ovl_id(&layering_info);
 
+	if (l_rule_ops->clear_layer)
+		l_rule_ops->clear_layer(&layering_info);
+
 	if (l_rule_ops->adjust_hrt_level != NULL)
 		l_rule_ops->adjust_hrt_level(&layering_info);
 
@@ -1921,12 +1934,6 @@ static void debug_set_layer_data(struct disp_layer_info *disp_info,
 
 	if (data_type != HRT_LAYER_DATA_ID && layer_id == -1)
 		return;
-
-	if (unlikely((unsigned int)disp_id >= 2)) {
-		DISPWARN("%s #%d disp_id error:%d\n",
-			 __func__, __LINE__, disp_id);
-		return;
-	}
 
 	layer_info = &disp_info->input_config[disp_id][layer_id];
 	switch (data_type) {

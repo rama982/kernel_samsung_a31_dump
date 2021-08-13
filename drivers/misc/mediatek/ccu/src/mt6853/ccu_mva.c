@@ -15,28 +15,16 @@
 #include "ccu_cmn.h"
 #include "ccu_mva.h"
 #include "ccu_platform_def.h"
-#include <linux/timekeeping.h>
-#include <linux/string.h>
-
-#define ION_LOG_SIZE	(10*1024*1024)	// 10M
 
 static struct ion_client *_ccu_ion_client;
 struct CcuMemHandle ccu_buffer_handle[2];
 
 static struct ion_handle *_ccu_ion_alloc(struct ion_client *client,
-	unsigned int heap_id_mask, size_t align, unsigned int size, bool cached, bool ion_log);
+	unsigned int heap_id_mask, size_t align, unsigned int size, bool cached);
 static int _ccu_ion_get_mva(struct ion_client *client,
 	struct ion_handle *handle, unsigned int *mva, bool cached);
 static void _ccu_ion_free_handle(struct ion_client *client,
 	struct ion_handle *handle);
-
-static unsigned long get_ns_systemtime(void)
-{
-	struct timespec ts;
-
-	getnstimeofday(&ts);
-	return ((unsigned long)(ts.tv_sec)) * 1000000000 + (ts.tv_nsec);
-}
 
 int ccu_ion_init(void)
 {
@@ -113,9 +101,9 @@ int ccu_allocate_mva(uint32_t *mva, void *va,
 		return ret;
 	}
 
-	*handle = _ccu_ion_alloc(_ccu_ion_client,
-			ION_HEAP_MULTIMEDIA_MAP_MVA_MASK,
-			(unsigned long)va, buffer_size, false, false);
+	// *handle = _ccu_ion_alloc(_ccu_ion_client,
+	// ION_HEAP_MULTIMEDIA_MAP_MVA_MASK,
+	// (unsigned long)va, buffer_size, false);
 
 	/*i2c dma buffer is PAGE_SIZE(4096B)*/
 
@@ -149,7 +137,7 @@ int ccu_config_m4u_port(void)
 	port.domain = 2;
 	port.Distance = 1;
 	port.Direction = 0;
-	strcpy(port.name, "L13_CAM_CCUI_MDP");
+	strncpy(port.name, "L13_CAM_CCUI_MDP", sizeof(port.name));
 	LOG_DBG_MUST("ioctl MTK_M4U_T_CONFIG_PORT L13_CAM_CCUI_MDP, %d\n", M4U_PORT_L13_CAM_CCUI);
 
 	ret = m4u_config_port(&port);
@@ -160,7 +148,7 @@ int ccu_config_m4u_port(void)
 	port.domain = 2;
 	port.Distance = 1;
 	port.Direction = 0;
-	strcpy(port.name, "L13_CAM_CCUO_MDP");
+	strncpy(port.name, "L13_CAM_CCUO_MDP", sizeof(port.name));
 	LOG_DBG_MUST("ioctl MTK_M4U_T_CONFIG_PORT L13_CAM_CCUO_MDP, %d\n", M4U_PORT_L13_CAM_CCUO);
 
 	ret = m4u_config_port(&port);
@@ -178,10 +166,10 @@ int ccu_allocate_mem(struct CcuMemHandle *memHandle, int size, bool cached)
 	//allocate ion buffer handle
 	memHandle->ionHandleKd = _ccu_ion_alloc(_ccu_ion_client,
 		ION_HEAP_MULTIMEDIA_MASK,
-		0, (size_t)size, (cached)?3:0, memHandle->meminfo.ion_log);
+		0, (size_t)size, (cached)?3:0);
 
 	if (!memHandle->ionHandleKd) {
-		LOG_ERR("fail to get ion buffer handle (size=0x%lx)\n", size);
+		LOG_ERR("fail to get ion buffer handle (size=0x%x)\n", size);
 		return -1;
 	}
 
@@ -192,9 +180,6 @@ int ccu_allocate_mem(struct CcuMemHandle *memHandle, int size, bool cached)
 	if (memHandle->meminfo.shareFd < 0) {
 		LOG_ERR("fail to get ion buffer share handle");
 		ion_free(_ccu_ion_client, memHandle->ionHandleKd);
-		if ((memHandle->meminfo.ion_log) && (size > ION_LOG_SIZE))  //10M
-			LOG_INF_MUST("ion free size = %d, caller = CCU\n", size);
-
 		return -1;
 	}
 	LOG_DBG_MUST("memHandle->share_fd(%d)\n", memHandle->meminfo.shareFd);
@@ -227,45 +212,38 @@ int ccu_allocate_mem(struct CcuMemHandle *memHandle, int size, bool cached)
 
 int ccu_deallocate_mem(struct CcuMemHandle *memHandle)
 {
-	LOG_DBG_MUST("free import ion: share_fd %d",
-		memHandle->meminfo.shareFd);
-	LOG_DBG_MUST("0x%lx\n", memHandle->meminfo.va);
+	uint32_t idx = (memHandle->meminfo.cached != 0) ? 1 : 0;
 
+	LOG_DBG_MUST("free idx(%u) mva(0x%x) fd(0x%x)\n", idx,
+		ccu_buffer_handle[idx].meminfo.mva,
+		ccu_buffer_handle[idx].meminfo.shareFd);
+	if (ccu_buffer_handle[idx].ionHandleKd == 0) {
+		LOG_ERR("idx %u handle %p is empty\n", idx,
+			ccu_buffer_handle[idx].ionHandleKd);
+		return -EINVAL;
+	}
 	ion_unmap_kernel(_ccu_ion_client,
-		ccu_buffer_handle[memHandle->meminfo.cached].ionHandleKd);
+		ccu_buffer_handle[idx].ionHandleKd);
 	__close_fd(current->files,
-		ccu_buffer_handle[memHandle->meminfo.cached].meminfo.shareFd);
+		ccu_buffer_handle[idx].meminfo.shareFd);
 	ion_free(_ccu_ion_client,
-		ccu_buffer_handle[memHandle->meminfo.cached].ionHandleKd);
-	if ((memHandle->meminfo.ion_log) && (memHandle->meminfo.size > ION_LOG_SIZE))  //10M
-		LOG_INF_MUST("ion free size = %d, caller = CCU\n", memHandle->meminfo.size);
-
-	memset(&(ccu_buffer_handle[memHandle->meminfo.cached]), 0,
+		ccu_buffer_handle[idx].ionHandleKd);
+	memset(&(ccu_buffer_handle[idx]), 0,
 		sizeof(struct CcuMemHandle));
 
 	return 0;
-
 }
 
 static struct ion_handle *_ccu_ion_alloc(struct ion_client *client,
-	unsigned int heap_id_mask, size_t align, unsigned int size, bool cached, bool ion_log)
+	unsigned int heap_id_mask, size_t align, unsigned int size, bool cached)
 {
-	unsigned long ts_start, ts_end;
 	struct ion_handle *disp_handle = NULL;
 
-	if (ion_log)
-		ts_start = get_ns_systemtime();
 	disp_handle = ion_alloc(client, size, align,
 		heap_id_mask, (cached)?3:0);
 	if (IS_ERR(disp_handle)) {
 		LOG_ERR("disp_ion_alloc 1error %p\n", disp_handle);
 		return NULL;
-	} else {
-		if ((ion_log) && (size > ION_LOG_SIZE)) { //10M
-			ts_end = get_ns_systemtime();
-			LOG_INF_MUST("ion alloc size = %d, caller = CCU, costTime = %lu ns\n",
-				size, (unsigned long)(ts_end-ts_start));
-		}
 	}
 
 	LOG_DBG("disp_ion_alloc 1 %p\n", disp_handle);
@@ -280,9 +258,6 @@ static int _ccu_ion_get_mva(struct ion_client *client,
 {
 	struct ion_mm_data mm_data;
 	int port;
-	int err;
-	size_t count = 0;
-	char const *ccu_bufferName = "CCU_BUFFER";
 
 	mm_data.mm_cmd = ION_MM_GET_IOVA;
 	mm_data.config_buffer_param.kernel_handle = handle;
@@ -319,24 +294,6 @@ static int _ccu_ion_get_mva(struct ion_client *client,
 
 	LOG_DBG_MUST("alloc mmu addr hnd=0x%p,mva=0x%08x\n",
 		handle, (unsigned int)*mva);
-
-	mm_data.mm_cmd = ION_MM_SET_DEBUG_INFO;
-	mm_data.buf_debug_info_param.kernel_handle = handle;
-	// Check Length of "ccu_bufferName"
-	if (strlen(ccu_bufferName) < ION_MM_DBG_NAME_LEN)
-		count = strlen(ccu_bufferName);
-	else
-		count = ION_MM_DBG_NAME_LEN - 1;
-	strncpy(mm_data.buf_debug_info_param.dbg_name, ccu_bufferName, count);
-	mm_data.buf_debug_info_param.dbg_name[count] = '\0';
-	mm_data.buf_debug_info_param.value1 = 67;
-	mm_data.buf_debug_info_param.value2 = 97;
-	mm_data.buf_debug_info_param.value3 = 109;
-	mm_data.buf_debug_info_param.value4 = 0;
-	err = ion_kernel_ioctl(client, ION_CMD_MULTIMEDIA, (unsigned long)&mm_data);
-	if (err)
-		LOG_ERR("ion_kernel_ioctl(ION_MM_SET_DEBUG_INFO) returns %d, client %p",
-			err, client);
 	return 0;
 }
 

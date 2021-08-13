@@ -23,6 +23,10 @@
 #include <linux/irq.h>
 #include "../inc/mt6360_pmu.h"
 
+#ifdef CONFIG_SEC_PM
+#include <linux/wakeup_reason.h>
+#endif
+
 static irqreturn_t mt6360_pmu_irq_handler(int irq, void *data)
 {
 	struct mt6360_pmu_info *mpi = data;
@@ -48,6 +52,9 @@ static irqreturn_t mt6360_pmu_irq_handler(int irq, void *data)
 			if (!(irq_events[i] & (1 << j)))
 				continue;
 			ret = irq_find_mapping(mpi->irq_domain, i * 8 + j);
+#ifdef CONFIG_SEC_PM
+			log_threaded_irq_wakeup_reason(ret, mpi->irq);
+#endif
 			if (ret) {
 				/* bypass adc donei & mivr irq */
 				if ((i == 5 && j == 4) || (i == 0 && j == 6))

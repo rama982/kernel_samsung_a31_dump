@@ -27,9 +27,6 @@ ccflags-$(CONFIG_MACH_MT6873) += -DCMDQ_MDP_ENABLE_SPR
 ccflags-$(CONFIG_MACH_MT6873) += -DMDP_MMPATH
 ccflags-$(CONFIG_MACH_MT6853) += -DCMDQ_MDP_ENABLE_SPR
 ccflags-$(CONFIG_MACH_MT6853) += -DMDP_MMPATH
-ccflags-$(CONFIG_MACH_MT6893) += -DCMDQ_MDP_ENABLE_SPR
-ccflags-$(CONFIG_MACH_MT6893) += -DPMQOS_VERSION2
-ccflags-$(CONFIG_MACH_MT6893) += -DMDP_MMPATH
 ccflags-$(CONFIG_MACH_MT6833) += -DCMDQ_MDP_ENABLE_SPR
 ccflags-$(CONFIG_MACH_MT6833) += -DMDP_MMPATH
 
@@ -54,6 +51,13 @@ else ifneq (,$(filter $(CONFIG_MTK_PLATFORM), "mt8167"))
 		-I$(srctree)/drivers/misc/mediatek/cmdq/v2/$(MTK_PLATFORM)
 endif
 
+ifeq ($(CONFIG_TRUSTONIC_TEE_SUPPORT),y)
+ifeq ($(CONFIG_TRUSTONIC_TRUSTED_UI),y)
+ifneq (,$(filter $(CONFIG_MTK_PLATFORM), "mt6768"))
+	ccflags-y += -DMDP_CHECK_IN_TUI
+endif
+endif
+endif
 
 # mdp platform code
 MDP_PLATFORM_DIR=$(srctree)/drivers/misc/mediatek/mdp/$(MTK_PLATFORM)

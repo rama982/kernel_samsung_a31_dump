@@ -36,7 +36,6 @@
 #endif	/* CONFIG_MTK_SMI_EXT */
 
 #include "mdp_cmdq_helper_ext.h"
-#include "swpm_me.h"
 
 #include <linux/kernel.h>
 #include <linux/uaccess.h>
@@ -308,7 +307,6 @@ static void cmdq_mdp_common_clock_enable(void)
 
 	CMDQ_MSG("[CLOCK]MDP SMI clock enable %d\n", smi_ref);
 	cmdq_mdp_get_func()->mdpEnableCommonClock(true);
-	set_swpm_mdp_active(true);
 
 	CMDQ_PROF_MMP(mdp_mmp_get_event()->MDP_clock_smi,
 		MMPROFILE_FLAG_PULSE, smi_ref, 1);
@@ -319,7 +317,6 @@ static void cmdq_mdp_common_clock_disable(void)
 	s32 smi_ref = atomic_dec_return(&mdp_ctx.mdp_smi_usage);
 
 	CMDQ_MSG("[CLOCK]MDP SMI clock disable %d\n", smi_ref);
-	set_swpm_mdp_active(false);
 	cmdq_mdp_get_func()->mdpEnableCommonClock(false);
 
 	CMDQ_PROF_MMP(mdp_mmp_get_event()->MDP_clock_smi,
@@ -643,11 +640,6 @@ static void cmdq_mdp_lock_thread(struct cmdqRecStruct *handle)
 	/* make this thread can be dispath again */
 	mdp_ctx.thread[thread].allow_dispatch = true;
 	mdp_ctx.thread[thread].task_count++;
-	if (mdp_ctx.thread[thread].task_count > 3) {
-		CMDQ_LOG("[WARN]thread %d, task_count %d, engine:0x%llx\n",
-			thread, mdp_ctx.thread[thread].task_count,
-			mdp_ctx.thread[thread].engine_flag);
-	}
 
 	/* assign client since mdp acquire thread after create pkt */
 	handle->pkt->cl = cmdq_helper_mbox_client(thread);
@@ -762,11 +754,10 @@ static s32 cmdq_mdp_check_engine_waiting_unlock(struct cmdqRecStruct *handle)
 		if (mdp_ctx.thread[i].task_count &&
 			handle->secData.is_secure != mdp_ctx.thread[i].secure) {
 			CMDQ_LOG(
-				"sec engine busy %u count:%u engine:%#llx & %#llx submit:%llu trigger:%llu\n",
+				"sec engine busy %u count:%u engine:%#llx & %#llx\n",
 				i, mdp_ctx.thread[i].task_count,
 				mdp_ctx.thread[i].engine_flag,
-				handle->engineFlag,
-				handle->submit, handle->trigger);
+				handle->engineFlag);
 			return -EBUSY;
 		}
 	}
@@ -816,18 +807,10 @@ static bool cmdq_mdp_check_engine_conflict(
 			 */
 			conflict = true;
 			thread = CMDQ_INVALID_THREAD;
-			if (sched_clock() - handle->submit > 200000000) {
-				CMDQ_LOG(
-					"engine conflict handle:0x%p engine:0x%llx conflict engine idx:%u thd:0x%x free:0x%08x owner:%d\n",
-					handle, handle->engineFlag, i,
-					thread, free, engine_list[i].currOwner);
-				cmdq_mdp_dump_thread_usage();
-			} else {
-				CMDQ_MSG(
-					"engine conflict handle:0x%p engine:0x%llx conflict engine idx:%u thd:0x%x free:0x%08x owner:%d\n",
-					handle, handle->engineFlag, i,
-					thread, free, engine_list[i].currOwner);
-			}
+			CMDQ_MSG(
+				"engine conflict handle:0x%p engine:0x%llx conflict engine idx:%u thd:0x%x free:0x%08x owner:%d\n",
+				handle, handle->engineFlag, i,
+				thread, free, engine_list[i].currOwner);
 			break;
 		}
 
@@ -930,7 +913,8 @@ static s32 cmdq_mdp_consume_handle(void)
 	u32 index;
 	bool acquired = false;
 	struct CmdqCBkStruct *callback = cmdq_core_get_group_cb();
-	bool conflict = false;
+	bool force_inorder = false;
+	bool secure_run = false;
 
 	/* operation for tasks_wait list need task mutex */
 	mutex_lock(&mdp_task_mutex);
@@ -940,21 +924,47 @@ static s32 cmdq_mdp_consume_handle(void)
 	CMDQ_PROF_MMP(mdp_mmp_get_event()->consume_done, MMPROFILE_FLAG_START,
 		current->pid, 0);
 
+	handle = list_first_entry_or_null(&mdp_ctx.tasks_wait, typeof(*handle),
+		list_entry);
+	if (handle)
+		secure_run = handle->secData.is_secure;
+
 	/* loop waiting list for pending handles */
 	list_for_each_entry_safe(handle, temp, &mdp_ctx.tasks_wait,
 		list_entry) {
 		/* operations for thread list need thread lock */
 		mutex_lock(&mdp_thread_mutex);
 
+		if (force_inorder && handle->force_inorder) {
+			mutex_unlock(&mdp_thread_mutex);
+			CMDQ_LOG(
+				"skip force inorder handle:0x%p engine:0x%llx\n",
+				handle, handle->engineFlag);
+			continue;
+		}
+
+		if (secure_run != handle->secData.is_secure) {
+			mutex_unlock(&mdp_thread_mutex);
+			CMDQ_LOG(
+				"skip secure inorder handle:%p engine:%#llx sec:%s\n",
+				handle, handle->engineFlag,
+				handle->secData.is_secure ? "true" : "false");
+			break;
+		}
+
 		handle->thread = cmdq_mdp_find_free_thread(handle);
 		if (handle->thread == CMDQ_INVALID_THREAD) {
+			/* no available thread, keep wait */
+			if (handle->force_inorder) {
+				CMDQ_LOG(
+					"begin force inorder handle:0x%p engine:0x%llx\n",
+					handle, handle->engineFlag);
+				force_inorder = true;
+			}
 			mutex_unlock(&mdp_thread_mutex);
 			CMDQ_MSG(
-				"fail to get thread handle:0x%p engine:0x%llx sec:%s other acquired:%s\n",
-				handle, handle->engineFlag,
-				handle->secData.is_secure ? "true" : "false",
-				acquired ? "true" : "false");
-			conflict = true;
+				"fail to get thread handle:0x%p engine:0x%llx\n",
+				handle, handle->engineFlag);
 			break;
 		}
 
@@ -1005,9 +1015,6 @@ static s32 cmdq_mdp_consume_handle(void)
 		current->pid, 0);
 
 	mutex_unlock(&mdp_task_mutex);
-
-	if (conflict)
-		cmdq_core_dump_active();
 
 	CMDQ_MSG("%s end acquired:%s\n", __func__, acquired ? "true" : "false");
 
@@ -1447,6 +1454,7 @@ s32 cmdq_mdp_handle_flush(struct cmdqRecStruct *handle)
 #ifdef CMDQ_SECURE_PATH_SUPPORT
 	if (handle->secData.is_secure) {
 		/* insert backup cookie cmd */
+		cmdq_sec_insert_backup_cookie(handle->pkt);
 		handle->thread = CMDQ_INVALID_THREAD;
 
 		/* Passing readback required data */
@@ -2455,6 +2463,10 @@ static void cmdq_mdp_begin_task_virtual(struct cmdqRecStruct *handle,
 
 	pmqos_curr_record =
 		kzalloc(sizeof(struct mdp_pmqos_record), GFP_KERNEL);
+	if (unlikely(!pmqos_curr_record)) {
+		CMDQ_ERR("alloc pmqos_curr_record fail\n");
+		return;
+	}
 	handle->user_private = pmqos_curr_record;
 
 	do_gettimeofday(&curr_time);
@@ -2468,7 +2480,7 @@ static void cmdq_mdp_begin_task_virtual(struct cmdqRecStruct *handle,
 		(curr_time.tv_sec == mdp_curr_pmqos->tv_sec &&
 		curr_time.tv_usec > mdp_curr_pmqos->tv_usec);
 	CMDQ_LOG_PMQOS(
-		"%s%s handle:%p engine:%#llx thread:%d cur:%lu.%lu end:%lu.%lu list:%u mdp:%u isp:%u\n",
+		"%s%s handle:%p engine:%#llx thread:%d cur:%ld.%ld end:%llu.%llu list:%u mdp:%u isp:%u\n",
 		__func__, expired ? " expired" : "",
 		handle, handle->engineFlag, handle->thread,
 		curr_time.tv_sec, curr_time.tv_usec,
@@ -2745,13 +2757,17 @@ static void cmdq_mdp_end_task_virtual(struct cmdqRecStruct *handle,
 	do_gettimeofday(&curr_time);
 	mdp_curr_pmqos = (struct mdp_pmqos *)handle->prop_addr;
 	pmqos_curr_record = (struct mdp_pmqos_record *)handle->user_private;
+	if (unlikely(!pmqos_curr_record)) {
+		CMDQ_ERR("alloc pmqos_curr_record fail\n");
+		return;
+	}
 	pmqos_curr_record->submit_tm = curr_time;
 
 	expired = curr_time.tv_sec > mdp_curr_pmqos->tv_sec ||
 		(curr_time.tv_sec == mdp_curr_pmqos->tv_sec &&
 		curr_time.tv_usec > mdp_curr_pmqos->tv_usec);
 	CMDQ_LOG_PMQOS(
-		"%s%s handle:%p engine:%#llx thread:%d cur:%lu.%lu end:%lu.%lu list:%u mdp:%u isp:%u\n",
+		"%s%s handle:%p engine:%#llx thread:%d cur:%ld.%ld end:%llu.%llu list:%u mdp:%u isp:%u\n",
 		__func__, expired ? " expired" : "",
 		handle, handle->engineFlag, handle->thread,
 		curr_time.tv_sec, curr_time.tv_usec,
@@ -3156,14 +3172,9 @@ static void mdp_readback_aal_virtual(struct cmdqRecStruct *handle,
 		CMDQ_ERR("%s wrong offset %u\n", __func__, condi_offset);
 		return;
 	}
-	if (condi_inst[1] == 0x10000001) {
+	if (condi_inst[1] == 0x10000001)
 		condi_inst = (u32 *)cmdq_pkt_get_va_by_offset(pkt,
 			condi_offset + CMDQ_INST_SIZE);
-		if (unlikely(!condi_inst)) {
-			CMDQ_ERR("%s wrong offset %u.\n", __func__, condi_offset);
-			return;
-		}
-	}
 	*condi_inst = (u32)CMDQ_REG_SHIFT_ADDR(cmdq_pkt_get_curr_buf_pa(pkt));
 
 	pa = pa + MDP_AAL_SRAM_CNT * 4;
@@ -3279,15 +3290,9 @@ static void mdp_readback_hdr_virtual(struct cmdqRecStruct *handle,
 		CMDQ_ERR("%s wrong offset %u\n", __func__, condi_offset);
 		return;
 	}
-	if (condi_inst[1] == 0x10000001) {
+	if (condi_inst[1] == 0x10000001)
 		condi_inst = (u32 *)cmdq_pkt_get_va_by_offset(pkt,
 			condi_offset + 8);
-		if (unlikely(!condi_inst)) {
-			CMDQ_ERR("%s wrong offset %u.\n", __func__, condi_offset);
-			return;
-		}
-	}
-
 	*condi_inst = (u32)CMDQ_REG_SHIFT_ADDR(cmdq_pkt_get_curr_buf_pa(pkt));
 
 	pa = pa + MDP_HDR_HIST_CNT * 4;

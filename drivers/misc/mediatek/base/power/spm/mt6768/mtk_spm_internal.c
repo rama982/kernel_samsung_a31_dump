@@ -17,6 +17,10 @@
 #include <asm/setup.h>
 #include <mtk_spm_internal.h>
 #include <mtk_power_gs_api.h>
+#ifdef CONFIG_SEC_PM
+#include <mtk_spm_irq.h>
+#include <linux/wakeup_reason.h>
+#endif
 
 #define WORLD_CLK_CNTCV_L        (0x10017008)
 #define WORLD_CLK_CNTCV_H        (0x1001700C)
@@ -192,6 +196,10 @@ unsigned int __spm_output_wake_reason(
 			wakesta->debug_flag, wakesta->debug_flag1);
 
 		printk_deferred("[name:spm&]%s", log_buf);
+#ifdef CONFIG_SEC_PM
+		if (!strcmp(scenario, "suspend"))
+			log_wakeup_reason_spm(mtk_spm_get_irq_0(), NULL, wakesta->assert_pc);
+#endif
 		return WR_PCM_ASSERT;
 	}
 
@@ -280,6 +288,9 @@ unsigned int __spm_output_wake_reason(
 	else {
 		aee_sram_printk("%s", log_buf);
 		printk_deferred("[name:spm&][SPM] %s", log_buf);
+#ifdef CONFIG_SEC_PM
+		log_wakeup_reason_spm(mtk_spm_get_irq_0(), buf, 0);
+#endif
 	}
 
 	return wr;

@@ -82,7 +82,7 @@ enum usb_state_enum {
 /* USB phy and clock */
 extern bool usb_pre_clock(bool enable);
 extern void usb_phy_poweron(void);
-extern void usb_phy_recover(void);
+extern void usb_phy_recover(bool is_host);
 extern void usb_phy_savecurrent(void);
 extern void usb_phy_context_restore(void);
 extern void usb_phy_context_save(void);
@@ -107,6 +107,8 @@ extern bool is_saving_mode(void);
 extern bool is_switch_charger(void);
 
 /* host and otg */
+extern void mt_usb_host_connect(int delay);
+extern void mt_usb_host_disconnect(int delay);
 extern void mt_usb_otg_init(struct musb *musb);
 extern void mt_usb_otg_exit(struct musb *musb);
 extern void mt_usb_init_drvvbus(void);
