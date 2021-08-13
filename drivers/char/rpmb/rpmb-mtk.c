@@ -49,6 +49,10 @@
 #include "core.h"
 #include "mtk_sd.h"
 #include "card.h"
+#ifdef CONFIG_TEEGRIS_TEE_SUPPORT
+#include "tee_client_api.h"
+#include "tzdev.h"
+#endif
 
 #ifdef CONFIG_MTK_UFS_SUPPORT
 #include "ufs-mtk.h"
@@ -57,12 +61,15 @@
 
 /* #define __RPMB_MTK_DEBUG_MSG */
 /* #define __RPMB_MTK_DEBUG_HMAC_VERIFY */
+#if defined(CONFIG_TEEGRIS_TEE_SUPPORT) || defined(CONFIG_TRUSTONIC_TEE_SUPPORT)
+#include "drrpmb_Api.h"
+#include "drrpmb_gp_Api.h"
+static struct dciMessage_t *rpmb_gp_dci;
+#endif
 
 /* TEE usage */
 #ifdef CONFIG_TRUSTONIC_TEE_SUPPORT
 #include "mobicore_driver_api.h"
-#include "drrpmb_Api.h"
-#include "drrpmb_gp_Api.h"
 
 #ifndef CONFIG_MTK_TEE_GP_SUPPORT
 static struct mc_uuid_t rpmb_uuid = RPMB_UUID;
@@ -74,7 +81,6 @@ static struct dciMessage_t *rpmb_dci;
 static struct mc_uuid_t rpmb_gp_uuid = RPMB_GP_UUID;
 static struct mc_session_handle rpmb_gp_session = {0};
 static u32 rpmb_gp_devid = MC_DEVICE_ID_DEFAULT;
-static struct dciMessage_t *rpmb_gp_dci;
 
 #endif
 
@@ -2125,9 +2131,9 @@ static int rpmb_execute_ufs(u32 cmdId)
 }
 #endif
 
-static int rpmb_gp_execute_ufs(u32 cmdId)
+static void rpmb_gp_execute_ufs(u32 cmdId)
 {
-	int ret;
+	int ret = 0;
 
 	switch (cmdId) {
 
@@ -2175,7 +2181,8 @@ static int rpmb_gp_execute_ufs(u32 cmdId)
 
 	}
 
-	return 0;
+	if (ret)
+		MSG(ERR, "%s: Error ret(%d).\n", __func__, ret);
 }
 #endif
 
@@ -2264,9 +2271,9 @@ static int rpmb_execute_emmc(u32 cmdId)
 }
 #endif
 
-static int rpmb_gp_execute_emmc(u32 cmdId)
+static void rpmb_gp_execute_emmc(u32 cmdId)
 {
-	int ret;
+	int ret = 0;
 
 	struct mmc_card *card = mtk_msdc_host[0]->mmc->card;
 	struct emmc_rpmb_req rpmb_req;
@@ -2343,7 +2350,8 @@ static int rpmb_gp_execute_emmc(u32 cmdId)
 
 	}
 
-	return 0;
+	if (ret)
+		MSG(ERR, "%s: Error ret(%d).\n", __func__, ret);
 }
 
 #ifndef CONFIG_MTK_TEE_GP_SUPPORT
@@ -2508,10 +2516,10 @@ int rpmb_gp_listenDci(void *data)
 		/* Received exception. */
 		boot_type = get_boot_type();
 		if (boot_type == BOOTDEV_SDMMC)
-			mc_ret = rpmb_gp_execute_emmc(cmdId);
+			rpmb_gp_execute_emmc(cmdId);
 #ifdef CONFIG_MTK_UFS_SUPPORT
 		else if (boot_type == BOOTDEV_UFS)
-			mc_ret = rpmb_gp_execute_ufs(cmdId);
+			rpmb_gp_execute_ufs(cmdId);
 #endif
 
 		/* Notify the STH*/
@@ -2534,7 +2542,7 @@ static int rpmb_gp_open_session(void)
 	MSG(INFO, "%s start\n", __func__);
 
 	do {
-		msleep(2000);
+		msleep(500);
 
 		/* open device */
 		mc_ret = mc_open_device(rpmb_gp_devid);
@@ -2602,9 +2610,9 @@ static int rpmb_gp_open_session(void)
 		else
 			break;
 
-	} while (cnt < 60);
+	} while (cnt < 240);
 
-	if (cnt >= 60)
+	if (cnt >= 240)
 		MSG(ERR, "%s, open session failed!!!\n", __func__);
 
 
@@ -3161,6 +3169,312 @@ static const struct file_operations rpmb_fops_emmc = {
 	.read = NULL,
 };
 
+#ifdef CONFIG_TEEGRIS_TEE_SUPPORT
+#ifdef CONFIG_MTK_UFS_SUPPORT
+static void rpmb_gp_execute_ufs(u32 cmdId)
+{
+	int ret;
+
+	switch (cmdId) {
+
+	case DCI_RPMB_CMD_READ_DATA:
+
+		MSG(DBG_INFO, "%s: DCI_RPMB_CMD_READ_DATA\n", __func__);
+
+		ret = rpmb_req_read_data_ufs(rpmb_gp_dci->request.frame,
+						rpmb_gp_dci->request.blks);
+
+		break;
+
+	case DCI_RPMB_CMD_GET_WCNT:
+
+		MSG(DBG_INFO, "%s: DCI_RPMB_CMD_GET_WCNT\n", __func__);
+
+		ret = rpmb_req_get_wc_ufs(NULL, NULL,
+						rpmb_gp_dci->request.frame);
+
+		break;
+
+	case DCI_RPMB_CMD_WRITE_DATA:
+
+		MSG(DBG_INFO, "%s: DCI_RPMB_CMD_WRITE_DATA\n", __func__);
+
+		ret = rpmb_req_write_data_ufs(rpmb_gp_dci->request.frame,
+						rpmb_gp_dci->request.blks);
+
+		break;
+
+#ifdef CFG_RPMB_KEY_PROGRAMED_IN_KERNEL
+	case DCI_RPMB_CMD_PROGRAM_KEY:
+		MSG(INFO, "%s: DCI_RPMB_CMD_PROGRAM_KEY.\n", __func__);
+		rpmb_dump_frame(rpmb_gp_dci->request.frame);
+
+		ret = rpmb_req_program_key_ufs(rpmb_gp_dci->request.frame, 1);
+
+		break;
+#endif
+
+	default:
+		MSG(ERR, "%s: receive an unknown command id(%d).\n",
+			__func__, cmdId);
+		break;
+
+	}
+
+	if (ret)
+		MSG(ERR, "%s: Error ret(%d).\n", __func__, ret);
+}
+#endif
+
+static void rpmb_gp_execute_emmc(u32 cmdId)
+{
+	int ret;
+
+	struct mmc_card *card = mtk_msdc_host[0]->mmc->card;
+	struct emmc_rpmb_req rpmb_req;
+
+	switch (cmdId) {
+
+	case DCI_RPMB_CMD_READ_DATA:
+		MSG(INFO, "%s: DCI_RPMB_CMD_READ_DATA.\n", __func__);
+
+		rpmb_req.type = RPMB_READ_DATA;
+		rpmb_req.blk_cnt = rpmb_gp_dci->request.blks;
+		rpmb_req.addr = rpmb_gp_dci->request.addr;
+		rpmb_req.data_frame = rpmb_gp_dci->request.frame;
+
+		ret = emmc_rpmb_req_handle(card, &rpmb_req);
+		if (ret)
+			MSG(ERR, "%s, emmc_rpmb_req_handle failed!!(%x)\n",
+				__func__, ret);
+
+		break;
+
+	case DCI_RPMB_CMD_GET_WCNT:
+		MSG(INFO, "%s: DCI_RPMB_CMD_GET_WCNT.\n", __func__);
+
+		rpmb_req.type = RPMB_GET_WRITE_COUNTER;
+		rpmb_req.blk_cnt = rpmb_gp_dci->request.blks;
+		rpmb_req.addr = rpmb_gp_dci->request.addr;
+		rpmb_req.data_frame = rpmb_gp_dci->request.frame;
+
+		ret = emmc_rpmb_req_handle(card, &rpmb_req);
+		if (ret)
+			MSG(ERR, "%s, emmc_rpmb_req_handle failed!!(%x)\n",
+				__func__, ret);
+
+		break;
+
+	case DCI_RPMB_CMD_WRITE_DATA:
+		MSG(INFO, "%s: DCI_RPMB_CMD_WRITE_DATA.\n", __func__);
+
+		rpmb_req.type = RPMB_WRITE_DATA;
+		rpmb_req.blk_cnt = rpmb_gp_dci->request.blks;
+		rpmb_req.addr = rpmb_gp_dci->request.addr;
+		rpmb_req.data_frame = rpmb_gp_dci->request.frame;
+
+		ret = emmc_rpmb_req_handle(card, &rpmb_req);
+		if (ret)
+			MSG(ERR, "%s, emmc_rpmb_req_handle failed!!(%x)\n",
+				__func__, ret);
+
+		break;
+
+#ifdef CFG_RPMB_KEY_PROGRAMED_IN_KERNEL
+	case DCI_RPMB_CMD_PROGRAM_KEY:
+		MSG(INFO, "%s: DCI_RPMB_CMD_PROGRAM_KEY.\n", __func__);
+		rpmb_dump_frame(rpmb_gp_dci->request.frame);
+
+		rpmb_req.type = RPMB_PROGRAM_KEY;
+		rpmb_req.blk_cnt = rpmb_gp_dci->request.blks;
+		rpmb_req.addr = rpmb_gp_dci->request.addr;
+		rpmb_req.data_frame = rpmb_gp_dci->request.frame;
+
+		ret = emmc_rpmb_req_handle(card, &rpmb_req);
+		if (ret)
+			MSG(ERR, "%s, emmc_rpmb_req_handle failed!!(%x)\n",
+				__func__, ret);
+
+		break;
+#endif
+
+	default:
+		MSG(ERR, "%s: receive an unknown command id(%d).\n",
+			__func__, cmdId);
+		break;
+
+	}
+
+	if (ret)
+		MSG(ERR, "%s: Error ret(%d).\n", __func__, ret);
+}
+
+TEEC_UUID uuid_client = {
+	.timeLow = 0x00000000,
+	.timeMid = 0x4D54,
+	.timeHiAndVersion = 0x4B5F,
+	.clockSeqAndNode = {0x42, 0x46, 0x72, 0x70, 0x6D, 0x62, 0x64, 0x72},
+};
+
+enum cmd_invoke {
+	CMD_WAITING_NOTIFY,
+	CMD_DONE_NOTIFY,
+	CMD_ERROR_NOTIFY,
+};
+
+struct TEE_GP_SESSION_DATA {
+	TEEC_Context context;
+	TEEC_Session session;
+	void *wsm_buffer;
+};
+
+static struct TEE_GP_SESSION_DATA *rpmb_gp_session;
+
+#define TEEGRIS_OPEN_SESSION_TMO       100
+TEEC_Result teegris_rpmb_open_session(TEEC_Context *context,
+	TEEC_Operation *operation, TEEC_Session *session)
+{
+	TEEC_Result res;
+	uint32_t returnOrigin;
+	int cnt = 0;
+
+	do {
+		res = TEEC_OpenSession(context, session, &uuid_client,
+					0, NULL, operation, &returnOrigin);
+		if (!res) {
+			MSG(INFO, "%s:open session success\n", __func__);
+			break;
+		}
+		cnt++;
+		if (cnt == TEEGRIS_OPEN_SESSION_TMO) {
+			MSG(ERR, "%s:open session fail,err:0x%x\n",
+				__func__, res);
+			break;
+		}
+		msleep(500);
+	} while (1);
+
+	return res;
+}
+
+TEEC_Result teegris_rpmb_run(TEEC_Context *context)
+{
+	TEEC_Result res;
+	TEEC_Operation operation;
+	uint32_t returnOrigin;
+	u32 cmdId;
+	int boot_type;
+
+	memset(&operation, 0, sizeof(TEEC_Operation));
+
+	operation.paramTypes = TEEC_PARAM_TYPES(TEEC_VALUE_INOUT,
+				TEEC_NONE, TEEC_NONE, TEEC_NONE);
+
+	operation.params[0].value.a =
+		virt_to_phys(rpmb_gp_session->wsm_buffer) & 0xFFFFFFFF;
+	operation.params[0].value.b =
+		(virt_to_phys(rpmb_gp_session->wsm_buffer)) >> 32;
+
+	res = teegris_rpmb_open_session(context, &operation,
+		&rpmb_gp_session->session);
+	if (res)
+		goto exit;
+	while (1) {
+		MSG(ERR, "%s: wait swd notify\n", __func__);
+		/* wait swd notify */
+		res = TEEC_InvokeCommand(&rpmb_gp_session->session,
+			CMD_WAITING_NOTIFY, &operation, &returnOrigin);
+		if (res != TEEC_SUCCESS)
+			goto exit;
+
+		rpmb_gp_dci =
+			(struct dciMessage_t *)(rpmb_gp_session->wsm_buffer);
+
+		cmdId = rpmb_gp_dci->command.header.commandId;
+
+		MSG(ERR, "%s: cmd wait notify done!! cmdId = %x\n",
+			__func__, cmdId);
+
+		boot_type = get_boot_type();
+		if (boot_type == BOOTDEV_SDMMC)
+			rpmb_gp_execute_emmc(cmdId);
+#ifdef CONFIG_MTK_UFS_SUPPORT
+		else if (boot_type == BOOTDEV_UFS)
+			rpmb_gp_execute_ufs(cmdId);
+#endif
+		switch (cmdId) {
+		case DCI_RPMB_CMD_READ_DATA:
+		case DCI_RPMB_CMD_GET_WCNT:
+		case DCI_RPMB_CMD_WRITE_DATA:
+		case DCI_RPMB_CMD_PROGRAM_KEY:
+			res = TEEC_InvokeCommand(&rpmb_gp_session->session,
+				CMD_DONE_NOTIFY,
+				&operation,
+				&returnOrigin);
+			break;
+		default:
+			res = TEEC_InvokeCommand(&rpmb_gp_session->session,
+				CMD_ERROR_NOTIFY,
+				&operation,
+				&returnOrigin);
+			break;
+		}
+		if (res != TEEC_SUCCESS)
+			goto exit;
+	}
+
+exit:
+	TEEC_CloseSession(&rpmb_gp_session->session);
+	return res;
+}
+
+#define TEEGRIS_INIT_CONTEXT_TMO       100
+#define ALLOCATED_DCI_MSG_SIZE (PAGE_SIZE * 3)
+int teegris_rpmb_thread(void *data)
+{
+	int cnt = 0;
+	TEEC_Result res = -1;
+
+	rpmb_gp_session =
+		kzalloc(sizeof(struct TEE_GP_SESSION_DATA), GFP_KERNEL);
+	if (!rpmb_gp_session) {
+		MSG(ERR, "failed to alloc rpmb_gp_session\n");
+		return -ENOMEM;
+	}
+
+	do {
+		res = TEEC_InitializeContext(NULL, &rpmb_gp_session->context);
+		if (!res)
+			break;
+		cnt++;
+		if (cnt == TEEGRIS_INIT_CONTEXT_TMO) {
+			MSG(ERR, "failed to init context,err:0x%x\n", res);
+			return res;
+		}
+		msleep(500);
+	} while (1);
+
+	rpmb_gp_session->wsm_buffer =
+		kzalloc(ALLOCATED_DCI_MSG_SIZE, GFP_KERNEL);
+	if (!rpmb_gp_session->wsm_buffer) {
+		MSG(ERR, "failed to allocate wsm buffer\n");
+		return -ENOMEM;
+	}
+
+	res = teegris_rpmb_run(&rpmb_gp_session->context);
+	if (res)
+		kfree(rpmb_gp_session->wsm_buffer);
+
+	MSG(ERR, "TEEC_FinalizeContex\n", res);
+
+	TEEC_FinalizeContext(&rpmb_gp_session->context);
+
+	kfree(rpmb_gp_session);
+
+	return (res != TEEC_SUCCESS);
+}
+#endif
+
 static int __init rpmb_init(void)
 {
 	int alloc_ret = -1;
@@ -3214,6 +3528,12 @@ static int __init rpmb_init(void)
 
 #ifdef CONFIG_TRUSTONIC_TEE_SUPPORT
 	open_th = kthread_run(rpmb_thread, NULL, "rpmb_open");
+	if (IS_ERR(open_th))
+		MSG(ERR, "%s, init kthread_run failed!\n", __func__);
+#endif
+
+#ifdef CONFIG_TEEGRIS_TEE_SUPPORT
+	open_th = kthread_run(teegris_rpmb_thread, NULL, "teegris rpmb");
 	if (IS_ERR(open_th))
 		MSG(ERR, "%s, init kthread_run failed!\n", __func__);
 #endif
