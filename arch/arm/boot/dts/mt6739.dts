@@ -35,7 +35,7 @@
 		bootargs = "console=tty0 console=ttyMT3,921600n1 vmalloc=400M \
 			slub_debug=OFZPU page_owner=on swiotlb=noforce \
 			cgroup.memory=nosocket,nokmem \
-			androidboot.hardware=mt6739 maxcpus=8 \
+			androidboot.hardware=mt6739 maxcpus=4 \
 			firmware_class.path=/vendor/firmware loop.max_part=7";
 	};
 
@@ -172,6 +172,12 @@
 		};
 	};
 
+	teegris {
+		compatible = "samsung,teegris";
+		interrupts = <GIC_SPI 224 IRQ_TYPE_LEVEL_LOW>,
+			<GIC_SPI 225 IRQ_TYPE_LEVEL_LOW>;
+	};
+
 	mobicore {
 		compatible = "trustonic,mobicore";
 		interrupts = <GIC_SPI 110 IRQ_TYPE_EDGE_RISING>;
@@ -228,6 +234,39 @@
 		#address-cells = <2>;
 		#size-cells = <2>;
 		ranges;
+
+		cccimdee-reserved-memory@44640000{
+			compatible = "mediatek,ccci-md-ee-dump";
+			reg = <0 0x48400000 0 0x12c000>;/* 600KB*2 */
+		};
+#ifdef CONFIG_SEC_DEBUG
+		sec-log-reserve-memory@0x4B000000 {
+			reg = <0 0x4B000000 0 0x200000>;
+		};
+
+		sec-lastklog@0x4B200000 {
+			reg = <0 0x4B200000 0 0x200000>;
+		};
+
+		sec-logger-reserve-memory@0x4B400000 {
+			reg = <0 0x4B400000 0 0x400000>;
+		};
+#ifdef CONFIG_SEC_DEBUG_AUTO_COMMENT
+		sec-autocomment-reserve-memory@0x4B800000 {
+			reg = <0 0x4B800000 0 0x10000>;
+		};
+#endif
+#ifdef CONFIG_SEC_DEBUG_EXTRA_INFO
+		sec-extrainfo-reserve-memory@0x4B810000 {
+			reg = <0 0x4B810000 0 0x1F0000>;
+		};
+#endif
+#ifdef CONFIG_SEC_DEBUG_INIT_LOG
+		sec-initlog-reserve-memory@0x4BA00000 {
+			reg = <0 0x4BA00000 0 0x200000>;
+		};
+#endif
+#endif
 		/*TODO: add reserved memory node here*/
 		consys-reserve-memory {
 			compatible = "mediatek,consys-reserve-memory";
@@ -295,6 +334,7 @@
 				<GIC_PPI 11 IRQ_TYPE_LEVEL_LOW>,
 				<GIC_PPI 10 IRQ_TYPE_LEVEL_LOW>;
 		clock-frequency = <13000000>;
+		arm,no-tick-in-suspend;
 	};
 
 	clk26m: clk26m {
@@ -509,9 +549,50 @@
 		#clock-cells = <1>;
 	};
 
-	fhctl@1000ce00 {
-		compatible = "mediatek,fhctl";
-		reg = <0 0x1000ce00 0 0x100>;
+	fhctl-new@1000ce00 {
+		compatible = "mediatek,mt6739-fhctl";
+		reg = <0 0x1000ce00 0 0x100>,
+			  <0 0x1000c000 0 0x1000>;
+		num-pll = <6>;
+		map0 {
+			domain = "top";
+			method = "fhctl-ap";
+
+			armpll {
+				fh-id = <0>;
+				pll-id = <999>;
+				perms = <0x1>;
+			};
+
+			mainpll {
+				fh-id = <1>;
+				pll-id = <999>;
+				perms = <0x1C>;
+			};
+
+			msdcpll {
+				fh-id = <2>;
+				pll-id = <999>;
+				perms = <0x1C>;
+			};
+
+			mfgpll {
+				fh-id = <3>;
+				pll-id = <999>;
+			};
+
+			mempll {
+				fh-id = <4>;
+				pll-id = <999>;
+				perms = <0x1C>;
+				/* ssc-rate = <8>; */
+			};
+
+			mmpll {
+				fh-id = <5>;
+				pll-id = <999>;
+			};
+		};
 	};
 
 	pwrap: pwrap@1000d000 {
@@ -1234,6 +1315,7 @@
 		interrupts = <GIC_SPI 74 IRQ_TYPE_EDGE_FALLING>;
 		clocks = <&infracfg_ao CLK_INFRA_AUXADC>;
 		clock-names = "auxadc-main";
+		#io-channel-cells = <1>;
 	};
 
 	apuart0: apuart0@11002000 {
@@ -1705,7 +1787,7 @@
 		compatible = "mediatek,mt_soc_pcm_hp_impedance";
 	};
 
-	mt_soc_codec_name {
+	soc_codec: mt_soc_codec_name {
 		compatible = "mediatek,mt_soc_codec_63xx";
 		use_hp_depop_flow = <0>; /* select 1: use, 0: not use */
 		use_ul_260k = <0>; /* select 1: use, 0: not use */
