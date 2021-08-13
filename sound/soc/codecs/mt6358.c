@@ -115,6 +115,8 @@ enum {
 };
 
 #define REG_STRIDE 2
+static unsigned int switch_stay_off;
+static unsigned int pull_down_stay_enable;
 
 #ifdef ANALOG_HPTRIM
 struct ana_offset {
@@ -827,9 +829,48 @@ static const char *const dl_pga_gain[] = {
 	"-7Db", "-8Db", "-9Db", "-10Db", "-40Db"
 };
 
-static void hp_zcd_disable(struct mt6358_priv *priv)
+static void zcd_enable(struct mt6358_priv *priv, bool enable, int device)
 {
-	regmap_write(priv->regmap, MT6358_ZCD_CON0, 0x0000);
+	if (enable) {
+		switch (device) {
+		case DEVICE_RCV:
+			regmap_update_bits(priv->regmap,
+					   MT6358_AUDDEC_ANA_CON11,
+					   0x7, 0x2);
+			break;
+		case DEVICE_LO:
+			regmap_update_bits(priv->regmap,
+					   MT6358_AUDDEC_ANA_CON11,
+					   0x7, 0x0);
+			break;
+		case DEVICE_HP:
+		default:
+			regmap_update_bits(priv->regmap,
+					   MT6358_AUDDEC_ANA_CON11,
+					   0x7, 0x1);
+			break;
+		}
+		/* Enable ZCD, for minimize pop noise */
+		/* when adjust gain during HP buffer on */
+		regmap_update_bits(priv->regmap, MT6358_ZCD_CON0,
+				   0x7 << 8, 0x1 << 8);
+		regmap_update_bits(priv->regmap, MT6358_ZCD_CON0,
+				   0x1 << 7, 0x0 << 7);
+		/* timeout, 1 = 5ms, 0 = 30ms */
+		regmap_update_bits(priv->regmap, MT6358_ZCD_CON0,
+				   0x1 << 6, 0x0 << 6);
+		regmap_update_bits(priv->regmap, MT6358_ZCD_CON0,
+				   0x3 << 4, 0x0 << 4);
+		regmap_update_bits(priv->regmap, MT6358_ZCD_CON0,
+				   0x7 << 1, 0x5 << 1);
+		regmap_update_bits(priv->regmap, MT6358_ZCD_CON0,
+				   0x1 << 0, 0x1 << 0);
+	} else {
+		regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON11,
+				   0x7, 0x4);
+		regmap_update_bits(priv->regmap, MT6358_ZCD_CON0,
+				   0xfffe, 0x0000);
+	}
 }
 
 static void hp_main_output_ramp(struct mt6358_priv *priv, bool up)
@@ -1552,9 +1593,10 @@ static int mtk_hp_enable(struct mt6358_priv *priv)
 	}
 #endif
 	dev_info(priv->dev, "+%s()\n", __func__);
-
-	/* Pull-down HPL/R to AVSS28_AUD */
-	hp_pull_down(priv, true);
+	if (!pull_down_stay_enable) {
+		/* Pull-down HPL/R to AVSS28_AUD */
+		hp_pull_down(priv, true);
+	}
 	/* release HP CMFB gate rstb */
 	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON4,
 			   0x1 << 6, 0x1 << 6);
@@ -1585,14 +1627,15 @@ static int mtk_hp_enable(struct mt6358_priv *priv)
 	regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON15, 0x0001);
 	usleep_range(100, 120);
 
-	/* Disable AUD_ZCD */
-	hp_zcd_disable(priv);
+	/* Enable AUD_ZCD */
+	zcd_enable(priv, true, DEVICE_HP);
 
 	/* Enable IBIST */
 	regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON12, 0x0055);
 
 	/* Set HP DR bias current optimization, 010: 6uA */
-	regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON11, 0x4900);
+	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON11,
+			   0xff80, 0x4900);
 	/* Set HP & ZCD bias current optimization */
 	/* 01: ZCD: 4uA, HP/HS/LO: 5uA */
 	regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON12, 0x0055);
@@ -1613,16 +1656,6 @@ static int mtk_hp_enable(struct mt6358_priv *priv)
 	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON1,
 			   0x00ff, 0x00fc);
 
-	// TODO: MT6771 set :@{
-	/* Enable HS driver bias circuits */
-	/* Disable HS main output stage */
-	//Ana_Set_Reg(AUDDEC_ANA_CON6, 0x0010, 0xffff);
-	/* Enable LO driver bias circuits */
-	/* Disable LO main output stage */
-	//Ana_Set_Reg(AUDDEC_ANA_CON7, 0x0010, 0xffff);
-	// TODO: @}
-
-	// TODO: MT6771 not set :@{
 	/* Enable HP main CMFB loop */
 	regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON9, 0x0e00);
 	/* Disable HP aux CMFB loop */
@@ -1631,7 +1664,6 @@ static int mtk_hp_enable(struct mt6358_priv *priv)
 	/* Select CMFB resistor bulk to AC mode */
 	/* Selec HS/LO cap size (6.5pF default) */
 	regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON10, 0x0000);
-	// TODO: @}
 
 	/* Enable HP main output stage */
 	regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON1, 0x00ff);
@@ -1756,6 +1788,9 @@ static int mtk_hp_disable(struct mt6358_priv *priv)
 	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON12,
 			   0x1 << 8, 0x1 << 8);
 
+	/* Disable AUD_ZCD */
+	zcd_enable(priv, false, DEVICE_HP);
+
 	/* Disable NV regulator (-1.2V) */
 	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON15, 0x1, 0x0);
 	/* Disable cap-less LDOs (1.5V) */
@@ -1768,6 +1803,11 @@ static int mtk_hp_disable(struct mt6358_priv *priv)
 	/* Set HPL/HPR gain to mute */
 	regmap_write(priv->regmap, MT6358_ZCD_CON2, DL_GAIN_N_10DB_REG);
 
+	if (switch_stay_off) {
+		/* Disable HPP/N STB enhance circuits */
+		regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON2,
+				   0xff, 0x33);
+	}
 	/* Increase ESD resistance of AU_REFN */
 	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON2,
 			   0x1 << 14, 0x0);
@@ -1775,9 +1815,10 @@ static int mtk_hp_disable(struct mt6358_priv *priv)
 	/* Set HP CMFB gate rstb */
 	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON4,
 			   0x1 << 6, 0x0);
-	/* disable Pull-down HPL/R to AVSS28_AUD */
-	hp_pull_down(priv, false);
-
+	if (!pull_down_stay_enable) {
+		/* disable Pull-down HPL/R to AVSS28_AUD */
+		hp_pull_down(priv, false);
+	}
 	return 0;
 }
 
@@ -1809,9 +1850,10 @@ static int mtk_hp_spk_enable(struct mt6358_priv *priv)
 	}
 #endif
 	dev_info(priv->dev, "+%s()\n", __func__);
-
-	/* Pull-down HPL/R to AVSS28_AUD */
-	hp_pull_down(priv, true);
+	if (!pull_down_stay_enable) {
+		/* Pull-down HPL/R to AVSS28_AUD */
+		hp_pull_down(priv, true);
+	}
 	/* release HP CMFB gate rstb */
 	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON4,
 			0x1 << 6, 0x1 << 6);
@@ -1856,13 +1898,14 @@ static int mtk_hp_spk_enable(struct mt6358_priv *priv)
 	regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON15, 0x0001);
 	usleep_range(100, 120);
 
-	/* Disable AUD_ZCD */
-	hp_zcd_disable(priv);
+	/* Enable AUD_ZCD */
+	zcd_enable(priv, true, DEVICE_HP);
 
 	/* Enable IBIST */
 	regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON12, 0x0055);
 	/* Set HP DR bias current optimization, 010: 6uA */
-	regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON11, 0x4900);
+	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON11,
+			   0xff80, 0x4900);
 	/* Set HP & ZCD bias current optimization */
 	/* 01: ZCD: 4uA, HP/HS/LO: 5uA */
 	regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON12, 0x0055);
@@ -2055,6 +2098,10 @@ static int mtk_hp_spk_disable(struct mt6358_priv *priv)
 	/* Disable IBIST */
 	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON12,
 			0x1 << 8, 0x1 << 8);
+
+	/* Disable AUD_ZCD */
+	zcd_enable(priv, false, DEVICE_HP);
+
 	/* Disable NV regulator (-1.2V) */
 	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON15, 0x1, 0x0);
 	/* Disable cap-less LDOs (1.5V) */
@@ -2064,6 +2111,12 @@ static int mtk_hp_spk_disable(struct mt6358_priv *priv)
 
 	/* Set HPL/HPR gain to mute */
 	regmap_write(priv->regmap, MT6358_ZCD_CON2, DL_GAIN_N_40DB_REG);
+
+	if (switch_stay_off) {
+		/* Disable HPP/N STB enhance circuits */
+		regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON2,
+				   0xff, 0x33);
+	}
 	/* Increase ESD resistance of AU_REFN */
 	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON2,
 			0x1 << 14, 0x0);
@@ -2071,9 +2124,10 @@ static int mtk_hp_spk_disable(struct mt6358_priv *priv)
 	/* Set HP CMFB gate rstb */
 	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON4,
 			0x1 << 6, 0x0);
-	/* disable Pull-down HPL/R to AVSS28_AUD */
-	hp_pull_down(priv, false);
-
+	if (!pull_down_stay_enable) {
+		/* disable Pull-down HPL/R to AVSS28_AUD */
+		hp_pull_down(priv, false);
+	}
 	return 0;
 }
 
@@ -2110,8 +2164,8 @@ static int mtk_hp_impedance_enable(struct mt6358_priv *priv)
 	regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON15, 0x0001);
 	usleep_range(100, 120);
 
-	/* Disable AUD_ZCD */
-	hp_zcd_disable(priv);
+	/* Enable AUD_ZCD */
+	zcd_enable(priv, true, DEVICE_HP);
 
 	/* Enable IBIST */
 	regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON12, 0x0055);
@@ -2160,6 +2214,11 @@ static int mtk_hp_impedance_disable(struct mt6358_priv *priv)
 	/* Disable AUD_CLK */
 	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON13, 0x1, 0x0);
 
+	if (pull_down_stay_enable) {
+		/* Pull-down HPL/R to AVSS28_AUD */
+		hp_pull_down(priv, true);
+	}
+
 	/* Disable HP main output stage */
 	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON1, 0x3, 0x0);
 
@@ -2178,6 +2237,10 @@ static int mtk_hp_impedance_disable(struct mt6358_priv *priv)
 	/* Disable IBIST */
 	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON12,
 			   0x1 << 8, 0x1 << 8);
+
+	/* Disable AUD_ZCD */
+	zcd_enable(priv, false, DEVICE_HP);
+
 	/* Disable NV regulator (-1.2V) */
 	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON15, 0x1, 0x0);
 	/* Disable cap-less LDOs (1.5V) */
@@ -2188,9 +2251,15 @@ static int mtk_hp_impedance_disable(struct mt6358_priv *priv)
 	/* Set HPL/HPR gain to mute */
 	regmap_write(priv->regmap, MT6358_ZCD_CON2, DL_GAIN_N_10DB_REG);
 
-	/* Set HPP/N STB enhance circuits */
-	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON2, 0xff, 0x33);
-
+	if (switch_stay_off) {
+		/* Disable HPP/N STB enhance circuits */
+		regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON2,
+				   0xff, 0x33);
+	} else {
+		/* Set HPP/N STB enhance circuits */
+		regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON2,
+				   0xff, 0x33);
+	}
 	/* Increase ESD resistance of AU_REFN */
 	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON2,
 			   0x1 << 14, 0x0);
@@ -2300,8 +2369,8 @@ static int mt_lo_event(struct snd_soc_dapm_widget *w,
 		regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON15, 0x0001);
 		usleep_range(100, 120);
 
-		/* Disable AUD_ZCD */
-		hp_zcd_disable(priv);
+		/* Enable AUD_ZCD */
+		zcd_enable(priv, true, DEVICE_LO);
 
 		/* Disable lineout short-ckt protection */
 		regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON7,
@@ -2313,7 +2382,8 @@ static int mt_lo_event(struct snd_soc_dapm_widget *w,
 		/* Enable IBIST */
 		regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON12, 0x0055);
 		/* Set HP DR bias current optimization, 010: 6uA */
-		regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON11, 0x4900);
+		regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON11,
+				   0xff80, 0x4900);
 		/* Set HP & ZCD bias current optimization */
 		/* 01: ZCD: 4uA, HP/HS/LO: 5uA */
 		regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON12, 0x0055);
@@ -2388,6 +2458,9 @@ static int mt_lo_event(struct snd_soc_dapm_widget *w,
 		regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON12,
 				   0x1 << 8, 0x1 << 8);
 
+		/* Disable AUD_ZCD */
+		zcd_enable(priv, false, DEVICE_LO);
+
 		/* Disable NV regulator (-1.2V) */
 		regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON15,
 				   0x1, 0x0);
@@ -2441,8 +2514,8 @@ static int mt_rcv_event(struct snd_soc_dapm_widget *w,
 		regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON15, 0x0001);
 		usleep_range(100, 120);
 
-		/* Disable AUD_ZCD */
-		hp_zcd_disable(priv);
+		/* Enable AUD_ZCD */
+		zcd_enable(priv, true, DEVICE_RCV);
 
 		/* Disable handset short-circuit protection */
 		regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON6, 0x0010);
@@ -2450,7 +2523,8 @@ static int mt_rcv_event(struct snd_soc_dapm_widget *w,
 		/* Enable IBIST */
 		regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON12, 0x0055);
 		/* Set HP DR bias current optimization, 010: 6uA */
-		regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON11, 0x4900);
+		regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON11,
+				   0xff80, 0x4900);
 		/* Set HP & ZCD bias current optimization */
 		/* 01: ZCD: 4uA, HP/HS/LO: 5uA */
 		regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON12, 0x0055);
@@ -2519,6 +2593,9 @@ static int mt_rcv_event(struct snd_soc_dapm_widget *w,
 		/* Disable IBIST */
 		regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON12,
 				   0x1 << 8, 0x1 << 8);
+
+		/* Disable AUD_ZCD */
+		zcd_enable(priv, false, DEVICE_RCV);
 
 		/* Disable NV regulator (-1.2V) */
 		regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON15,
@@ -4149,10 +4226,10 @@ static void start_trim_hardware(struct mt6358_priv *priv, bool buffer_on)
 
 	/* Enable AUDGLB */
 	mt6358_set_aud_global_bias(priv, true);
-
-	/* Pull-down HPL/R to AVSS30_AUD */
-	hp_pull_down(priv, true);
-
+	if (!pull_down_stay_enable) {
+		/* Pull-down HPL/R to AVSS30_AUD */
+		hp_pull_down(priv, true);
+	}
 	/* release HP CMFB gate rstb */
 	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON4,
 			   0x1 << 6, 0x1 << 6);
@@ -4235,13 +4312,14 @@ static void start_trim_hardware(struct mt6358_priv *priv, bool buffer_on)
 	regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON15, 0x0001);
 	usleep_range(100, 120);
 
-	/* Disable AUD_ZCD */
-	hp_zcd_disable(priv);
+	/* Enable AUD_ZCD */
+	zcd_enable(priv, true, DEVICE_HP);
 
 	/* Enable IBIST */
 	regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON12, 0x0055);
 	/* Set HP DR bias current optimization, 010: 6uA */
-	regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON11, 0x4900);
+	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON11,
+			   0xff80, 0x4900);
 	/* Set HP & ZCD bias current optimization */
 	/* 01: ZCD: 4uA, HP/HS/LO: 5uA */
 	regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON12, 0x0055);
@@ -4395,6 +4473,10 @@ static void stop_trim_hardware(struct mt6358_priv *priv)
 	/* Disable IBIST */
 	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON12,
 			0x1 << 8, 0x1 << 8);
+
+	/* Disable AUD_ZCD */
+	zcd_enable(priv, false, DEVICE_HP);
+
 	/* Disable NV regulator (-1.2V) */
 	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON15, 0x1, 0x0);
 	/* Disable cap-less LDOs (1.5V) */
@@ -4404,6 +4486,12 @@ static void stop_trim_hardware(struct mt6358_priv *priv)
 
 	/* Set HPL/HPR gain to mute */
 	regmap_write(priv->regmap, MT6358_ZCD_CON2, DL_GAIN_N_40DB_REG);
+
+	if (switch_stay_off) {
+		/* Disable HPP/N STB enhance circuits */
+		regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON2,
+				   0xff, 0x33);
+	}
 	/* Increase ESD resistance of AU_REFN */
 	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON2,
 			0x1 << 14, 0x0);
@@ -4433,10 +4521,10 @@ static void stop_trim_hardware(struct mt6358_priv *priv)
 	/* Set HP CMFB gate rstb */
 	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON4,
 			   0x1 << 6, 0x0);
-
-	/* Disable Pull-down HPL/R to AVSS30_AUD  */
-	hp_pull_down(priv, false);
-
+	if (!pull_down_stay_enable) {
+		/* Disable Pull-down HPL/R to AVSS30_AUD  */
+		hp_pull_down(priv, false);
+	}
 	/* disable AUDGLB */
 	mt6358_set_aud_global_bias(priv, false);
 
@@ -4458,9 +4546,10 @@ static void start_trim_hardware_with_lo(struct mt6358_priv *priv,
 	/* Enable AUDGLB */
 	mt6358_set_aud_global_bias(priv, true);
 
-	/* Pull-down HPL/R to AVSS30_AUD */
-	hp_pull_down(priv, true);
-
+	if (!pull_down_stay_enable) {
+		/* Pull-down HPL/R to AVSS30_AUD */
+		hp_pull_down(priv, true);
+	}
 	/* release HP CMFB gate rstb */
 	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON4,
 			   0x1 << 6, 0x1 << 6);
@@ -4541,14 +4630,15 @@ static void start_trim_hardware_with_lo(struct mt6358_priv *priv,
 	regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON15, 0x0001);
 	udelay(100);
 
-	/* Disable AUD_ZCD */
-	hp_zcd_disable(priv);
+	/* Enable AUD_ZCD */
+	zcd_enable(priv, true, DEVICE_HP);
 
 	/* Enable IBIST */
 	regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON12, 0x0055);
 
 	/* Set HP DR bias current optimization, 010: 6uA */
-	regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON11, 0x4900);
+	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON11,
+			   0xff80, 0x4900);
 	/* Set HP & ZCD bias current optimization */
 	/* 01: ZCD: 4uA, HP/HS/LO: 5uA */
 	regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON12, 0x0055);
@@ -4737,6 +4827,10 @@ static void stop_trim_hardware_with_lo(struct mt6358_priv *priv)
 	/* Disable IBIST */
 	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON12,
 			0x1 << 8, 0x1 << 8);
+
+	/* Disable AUD_ZCD */
+	zcd_enable(priv, false, DEVICE_HP);
+
 	/* Disable NV regulator (-1.2V) */
 	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON15, 0x1, 0x0);
 	/* Disable cap-less LDOs (1.5V) */
@@ -4748,6 +4842,11 @@ static void stop_trim_hardware_with_lo(struct mt6358_priv *priv)
 	/* Set HPL/HPR gain to mute */
 	regmap_write(priv->regmap, MT6358_ZCD_CON2, DL_GAIN_N_40DB_REG);
 
+	if (switch_stay_off) {
+		/* Disable HPP/N STB enhance circuits */
+		regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON2,
+				   0xff, 0x33);
+	}
 	/* Increase ESD resistance of AU_REFN */
 	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON2,
 			0x1 << 14, 0x0);
@@ -4777,10 +4876,10 @@ static void stop_trim_hardware_with_lo(struct mt6358_priv *priv)
 	/* Set HP CMFB gate rstb */
 	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON4,
 			   0x1 << 6, 0x0);
-
-	/* Disable Pull-down HPL/R to AVSS30_AUD  */
-	hp_pull_down(priv, false);
-
+	if (!pull_down_stay_enable) {
+		/* Disable Pull-down HPL/R to AVSS30_AUD  */
+		hp_pull_down(priv, false);
+	}
 	/* disable AUDGLB */
 	mt6358_set_aud_global_bias(priv, false);
 
@@ -5937,6 +6036,9 @@ static int dc_trim_thread(void *arg)
 {
 	struct mt6358_priv *priv = arg;
 
+	if (pull_down_stay_enable)
+		hp_pull_down(priv, true);
+
 	get_hp_trim_offset(priv, false);
 #ifdef CONFIG_MTK_ACCDET
 	accdet_late_init(0);
@@ -6438,15 +6540,16 @@ static int mt6358_rcv_mic_set(struct snd_kcontrol *kcontrol,
 	regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON15, 0x0001);
 	usleep_range(100, 120);
 
-	/* Disable AUD_ZCD */
-	hp_zcd_disable(priv);
+	/* Enable AUD_ZCD */
+	zcd_enable(priv, true, DEVICE_RCV);
 
 	/* Disable handset short-circuit protection */
 	regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON6, 0x0010);
 	/* Enable IBIST */
 	regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON12, 0x0055);
 	/* Set HP DR bias current optimization, 010: 6uA */
-	regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON11, 0x4900);
+	regmap_update_bits(priv->regmap, MT6358_AUDDEC_ANA_CON11,
+			   0xff80, 0x4900);
 	/* Set HP & ZCD bias current optimization */
 	/* 01: ZCD: 4uA, HP/HS/LO: 5uA */
 	regmap_write(priv->regmap, MT6358_AUDDEC_ANA_CON12, 0x0055);
@@ -6781,7 +6884,6 @@ static int mt6358_codec_probe(struct snd_soc_codec *codec)
 	priv->ana_gain[AUDIO_ANALOG_VOLUME_MICAMP2] = 3;
 
 	priv->hp_current_calibrate_val = get_hp_current_calibrate_val(priv);
-
 	return 0;
 }
 
@@ -7677,6 +7779,7 @@ static int mt6358_platform_driver_probe(struct platform_device *pdev)
 #ifdef CONFIG_MTK_PMIC_WRAP
 	struct device_node *pwrap_node = NULL;
 #endif
+	int ret;
 
 	priv = devm_kzalloc(&pdev->dev,
 			    sizeof(struct mt6358_priv),
@@ -7702,6 +7805,27 @@ static int mt6358_platform_driver_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 #endif
+
+	/* get switch_stay_off flag */
+	ret = of_property_read_u32(pdev->dev.of_node,
+				   "mtk_switch_stay_off", &switch_stay_off);
+	if (ret) {
+		switch_stay_off = 0;
+		dev_info(&pdev->dev,
+			"%s(), get switch_stay_off fail, default 0\n",
+			__func__);
+	}
+
+	/* get pull_down_stay_enable flag */
+	ret = of_property_read_u32(pdev->dev.of_node,
+				   "mtk_pull_down_stay_enable",
+				   &pull_down_stay_enable);
+	if (ret) {
+		pull_down_stay_enable = 0;
+		dev_info(&pdev->dev,
+			"%s(), get pull_down_stay_enable fail, default 0\n",
+			__func__);
+	}
 
 	if (IS_ERR(priv->regmap))
 		return PTR_ERR(priv->regmap);

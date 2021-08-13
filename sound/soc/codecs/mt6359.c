@@ -40,6 +40,8 @@
 
 #include "mt6359.h"
 
+#undef USE_ZCD_FUNCTION
+
 enum {
 	MT6359_AIF_1 = 0,	/* dl: hp, rcv, hp+lo */
 	MT6359_AIF_2,		/* dl: lo only */
@@ -645,9 +647,48 @@ static const char *const hp_dl_pga_gain[] = {
 	"-22Db", "-40Db"
 };
 
-static void zcd_disable(struct mt6359_priv *priv)
+static void zcd_enable(struct mt6359_priv *priv, bool enable, int device)
 {
+#ifdef USE_ZCD_FUNCTION
+	if (enable) {
+		switch (device) {
+		case DEVICE_RCV:
+			regmap_update_bits(priv->regmap,
+					   MT6359_AUDDEC_ANA_CON11,
+					   0x7, 0x2);
+			break;
+		case DEVICE_LO:
+			regmap_update_bits(priv->regmap,
+					   MT6359_AUDDEC_ANA_CON11,
+					   0x7, 0x0);
+			break;
+		case DEVICE_HP:
+		default:
+			regmap_update_bits(priv->regmap,
+					   MT6359_AUDDEC_ANA_CON11,
+					   0x7, 0x1);
+			break;
+		}
+		/* Enable ZCD, for minimize pop noise */
+		/* timeout, 1 = 5ms, 0 = 30ms */
+		regmap_update_bits(priv->regmap, MT6359_ZCD_CON0,
+				   0x1 << 6, 0x0 << 6);
+		regmap_update_bits(priv->regmap, MT6359_ZCD_CON0,
+				   0x3 << 4, 0x0 << 4);
+		regmap_update_bits(priv->regmap, MT6359_ZCD_CON0,
+				   0x7 << 1, 0x5 << 1);
+		regmap_update_bits(priv->regmap, MT6359_ZCD_CON0,
+				   0x1 << 0, 0x1 << 0);
+	} else {
+		regmap_update_bits(priv->regmap, MT6359_AUDDEC_ANA_CON11,
+				   0x7, 0x4);
+		regmap_update_bits(priv->regmap, MT6359_ZCD_CON0,
+				   0xffff, 0x0000);
+	}
+#else
+	dev_info(priv->dev, "%s: ZCD is disabled.\n", __func__);
 	regmap_write(priv->regmap, MT6359_ZCD_CON0, 0x0000);
+#endif
 }
 
 static void hp_main_output_ramp(struct mt6359_priv *priv, bool up)
@@ -1697,6 +1738,9 @@ static int mt_sgen_event(struct snd_soc_dapm_widget *w,
 
 static int mtk_hp_enable(struct mt6359_priv *priv)
 {
+	/* Enable AUD_ZCD */
+	zcd_enable(priv, true, DEVICE_HP);
+
 	if (priv->hp_hifi_mode) {
 		/* Set HP DR bias current optimization, 010: 6uA */
 		regmap_update_bits(priv->regmap, MT6359_AUDDEC_ANA_CON11,
@@ -1883,11 +1927,25 @@ static int mtk_hp_disable(struct mt6359_priv *priv)
 	/* Disable HP aux output stage */
 	regmap_update_bits(priv->regmap, MT6359_AUDDEC_ANA_CON1,
 			   0x3 << 2, 0x0);
+
+	/* Disable AUD_ZCD */
+	zcd_enable(priv, false, DEVICE_HP);
+
+	/* Set HPR/L STB enhance circuits */
+	regmap_update_bits(priv->regmap, MT6359_AUDDEC_ANA_CON2,
+			   RG_HPROUTPUTSTBENH_VAUDP32_MASK_SFT,
+			   0x2 << RG_HPROUTPUTSTBENH_VAUDP32_SFT);
+	regmap_update_bits(priv->regmap, MT6359_AUDDEC_ANA_CON2,
+			   RG_HPLOUTPUTSTBENH_VAUDP32_MASK_SFT,
+			   0x2 << RG_HPLOUTPUTSTBENH_VAUDP32_SFT);
 	return 0;
 }
 
 static int mtk_hp_impedance_enable(struct mt6359_priv *priv)
 {
+	/* Enable AUD_ZCD */
+	zcd_enable(priv, true, DEVICE_HP);
+
 	/* Disable HPR/L STB enhance circuits */
 	regmap_update_bits(priv->regmap, MT6359_AUDDEC_ANA_CON2,
 			   RG_HPROUTPUTSTBENH_VAUDP32_MASK_SFT, 0x0);
@@ -1937,11 +1995,14 @@ static int mtk_hp_impedance_disable(struct mt6359_priv *priv)
 
 	/* Enable HPR/L STB enhance circuits for off state */
 	regmap_update_bits(priv->regmap, MT6359_AUDDEC_ANA_CON2,
-			   RG_HPROUTPUTSTBENH_VAUDP32_MASK_SFT,
-			   0x3 << RG_HPROUTPUTSTBENH_VAUDP32_SFT);
+					   RG_HPROUTPUTSTBENH_VAUDP32_MASK_SFT,
+					   0x3 << RG_HPROUTPUTSTBENH_VAUDP32_SFT);
 	regmap_update_bits(priv->regmap, MT6359_AUDDEC_ANA_CON2,
-			   RG_HPLOUTPUTSTBENH_VAUDP32_MASK_SFT,
-			   0x3 << RG_HPLOUTPUTSTBENH_VAUDP32_SFT);
+					   RG_HPLOUTPUTSTBENH_VAUDP32_MASK_SFT,
+					   0x3 << RG_HPLOUTPUTSTBENH_VAUDP32_SFT);
+
+	/* Disable AUD_ZCD */
+	zcd_enable(priv, false, DEVICE_HP);
 
 #ifdef CONFIG_MTK_ACCDET
 	/* from accdet request */
@@ -2022,6 +2083,9 @@ static int mt_rcv_event(struct snd_soc_dapm_widget *w,
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
+		/* Enable AUD_ZCD */
+		zcd_enable(priv, true, DEVICE_RCV);
+
 		/* Disable handset short-circuit protection */
 		regmap_write(priv->regmap, MT6359_AUDDEC_ANA_CON6, 0x0010);
 
@@ -2086,6 +2150,9 @@ static int mt_rcv_event(struct snd_soc_dapm_widget *w,
 		/* Disable HS driver bias circuits */
 		regmap_update_bits(priv->regmap, MT6359_AUDDEC_ANA_CON6,
 				   RG_AUDHSPWRUP_IBIAS_VAUDP32_MASK_SFT, 0x0);
+
+		/* Disable AUD_ZCD */
+		zcd_enable(priv, false, DEVICE_RCV);
 		break;
 	default:
 		break;
@@ -2108,6 +2175,9 @@ static int mt_lo_event(struct snd_soc_dapm_widget *w,
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
+		/* Enable AUD_ZCD */
+		zcd_enable(priv, true, DEVICE_LO);
+
 		/* Disable handset short-circuit protection */
 		regmap_write(priv->regmap, MT6359_AUDDEC_ANA_CON7, 0x0010);
 
@@ -2174,6 +2244,9 @@ static int mt_lo_event(struct snd_soc_dapm_widget *w,
 		/* Disable LO driver bias circuits */
 		regmap_update_bits(priv->regmap, MT6359_AUDDEC_ANA_CON7,
 				   RG_AUDLOLPWRUP_IBIAS_VAUDP32_MASK_SFT, 0x0);
+
+		/* Disable AUD_ZCD */
+		zcd_enable(priv, false, DEVICE_LO);
 		break;
 	default:
 		break;
@@ -2430,6 +2503,7 @@ static int mt_vow_aud_lpw_event(struct snd_soc_dapm_widget *w,
 	unsigned int mic_type_l = priv->mux_select[MUX_MIC_TYPE_0];
 	unsigned int mic_type_hs = priv->mux_select[MUX_MIC_TYPE_1];
 	unsigned int mic_type_r = priv->mux_select[MUX_MIC_TYPE_2];
+
 	dev_info(priv->dev, "%s(), event 0x%x\n", __func__, event);
 
 	switch (event) {
@@ -4517,7 +4591,6 @@ static void enable_trim_buf(struct mt6359_priv *priv, bool enable)
 			   (enable ? 1 : 0) << RG_AUDTRIMBUF_EN_VAUDP32_SFT);
 }
 
-#if !defined(CONFIG_FPGA_EARLY_PORTING)
 static void enable_trim_circuit(struct mt6359_priv *priv, bool enable)
 {
 	if (enable) {
@@ -4541,6 +4614,7 @@ static void enable_trim_circuit(struct mt6359_priv *priv, bool enable)
 	}
 }
 
+#ifndef CONFIG_FPGA_EARLY_PORTING
 static void start_trim_hardware(struct mt6359_priv *priv)
 {
 	dev_info(priv->dev, "%s(), ++\n", __func__);
@@ -4617,8 +4691,8 @@ static void start_trim_hardware(struct mt6359_priv *priv)
 	regmap_write(priv->regmap, MT6359_AUDDEC_ANA_CON14, 0x0015);
 	usleep_range(100, 120);
 
-	/* Disable AUD_ZCD */
-	zcd_disable(priv);
+	/* Enable AUD_ZCD */
+	zcd_enable(priv, true, DEVICE_HP);
 
 	/* Disable HeadphoneL/HeadphoneR short circuit protection */
 	regmap_update_bits(priv->regmap, MT6359_AUDDEC_ANA_CON0,
@@ -4733,6 +4807,9 @@ static void stop_trim_hardware(struct mt6359_priv *priv)
 			   RG_AUDIBIASPWRDN_VAUDP32_MASK_SFT,
 			   0x1 << RG_AUDIBIASPWRDN_VAUDP32_SFT);
 
+	/* Disable AUD_ZCD */
+	zcd_enable(priv, false, DEVICE_HP);
+
 	/* Disable NV regulator (-1.2V) */
 	regmap_update_bits(priv->regmap, MT6359_AUDDEC_ANA_CON14,
 			   RG_NVREG_EN_VAUDP32_MASK_SFT, 0x0);
@@ -4799,9 +4876,19 @@ static void stop_trim_hardware(struct mt6359_priv *priv)
 	/* Reset playback gpio (mosi/clk/sync) */
 	playback_gpio_reset(priv);
 
+	/* Set HPR/L STB enhance circuits */
+	regmap_update_bits(priv->regmap, MT6359_AUDDEC_ANA_CON2,
+			   RG_HPROUTPUTSTBENH_VAUDP32_MASK_SFT,
+			   0x2 << RG_HPROUTPUTSTBENH_VAUDP32_SFT);
+	regmap_update_bits(priv->regmap, MT6359_AUDDEC_ANA_CON2,
+			   RG_HPLOUTPUTSTBENH_VAUDP32_MASK_SFT,
+			   0x2 << RG_HPLOUTPUTSTBENH_VAUDP32_SFT);
+
 	dev_info(priv->dev, "%s(), --\n", __func__);
 }
+#endif
 
+#ifndef CONFIG_FPGA_EARLY_PORTING
 static int calculate_trim_result(int *on_value, int *off_value,
 				 int trimTime, int discard_num, int useful_num)
 {
@@ -4830,10 +4917,12 @@ static int calculate_trim_result(int *on_value, int *off_value,
 
 	return DIV_ROUND_CLOSEST(offset, useful_num);
 }
+#endif
 
 static void get_hp_dctrim_offset(struct mt6359_priv *priv,
 				 int *hpl_trim, int *hpr_trim)
 {
+#ifndef CONFIG_FPGA_EARLY_PORTING
 #define TRIM_TIMES 26
 #define TRIM_DISCARD_NUM 3
 #define TRIM_USEFUL_NUM (TRIM_TIMES - (TRIM_DISCARD_NUM * 2))
@@ -4917,6 +5006,7 @@ static void get_hp_dctrim_offset(struct mt6359_priv *priv,
 
 	dev_info(priv->dev, "%s(), R_offset = %d, L_offset = %d\n",
 		 __func__, *hpr_trim, *hpl_trim);
+#endif
 }
 
 static void update_finetrim_offset(struct mt6359_priv *priv,
@@ -5021,7 +5111,6 @@ static unsigned int update_trim_code(const bool is_negative,
 	}
 	return ret_trim_code;
 }
-
 static void calculate_lr_finetrim_code(struct mt6359_priv *priv)
 {
 	struct hp_trim_data *hp_trim = &priv->hp_trim_3_pole;
@@ -5267,11 +5356,9 @@ EXIT:
 	dev_info(priv->dev, "%s(), result hp_trim_code(R/L) = (0x%x/0x%x)\n",
 		 __func__, hpr_trim_code, hpl_trim_code);
 }
-#endif
 
 static void get_hp_trim_offset(struct mt6359_priv *priv, bool force)
 {
-#if !defined(CONFIG_FPGA_EARLY_PORTING)
 	struct dc_trim_data *dc_trim = &priv->dc_trim;
 	struct hp_trim_data *hp_trim_3_pole = &priv->hp_trim_3_pole;
 	unsigned int reg_value;
@@ -5300,17 +5387,15 @@ static void get_hp_trim_offset(struct mt6359_priv *priv, bool force)
 		 __func__,
 		 hp_trim_3_pole->hp_fine_trim_r, hp_trim_3_pole->hp_trim_r,
 		 hp_trim_3_pole->hp_fine_trim_l, hp_trim_3_pole->hp_trim_l);
-#else
-	dev_info(priv->dev, "%s(), bypass while FPGA", __func__);
-#endif
 }
-
 
 static int dc_trim_thread(void *arg)
 {
+#ifndef CONFIG_FPGA_EARLY_PORTING
 	struct mt6359_priv *priv = arg;
 
 	get_hp_trim_offset(priv, false);
+#endif
 
 #ifdef CONFIG_MTK_ACCDET
 	accdet_late_init(0);
@@ -6274,15 +6359,15 @@ static int mt6359_rcv_dcc_set(struct snd_kcontrol *kcontrol,
 	regmap_write(priv->regmap, MT6359_AUDDEC_ANA_CON14, 0x0015);
 	usleep_range(100, 120);
 
-	/* Disable AUD_ZCD */
-	zcd_disable(priv);
+	/* Enable AUD_ZCD */
+	zcd_enable(priv, true, DEVICE_RCV);
 
 	/* Disable handset short-circuit protection */
 	regmap_write(priv->regmap, MT6359_AUDDEC_ANA_CON6, 0x0010);
 	/* Enable IBIST */
 	regmap_write(priv->regmap, MT6359_AUDDEC_ANA_CON12, 0x0055);
 	/* Set HP DR bias current optimization, 010: 6uA */
-	regmap_write(priv->regmap, MT6359_AUDDEC_ANA_CON11, 0x4900);
+	regmap_update_bits(priv->regmap, MT6359_AUDDEC_ANA_CON11, 0xff80, 0x4900);
 	/* Set HP & ZCD bias current optimization */
 	/* 01: ZCD: 4uA, HP/HS/LO: 5uA */
 	regmap_write(priv->regmap, MT6359_AUDDEC_ANA_CON12, 0x0055);
@@ -6477,7 +6562,7 @@ static int mt6359_codec_init_reg(struct mt6359_priv *priv)
 	priv->hp_hifi_mode = 0;
 
 	/* Disable AUD_ZCD */
-	zcd_disable(priv);
+	zcd_enable(priv, false, DEVICE_HP);
 
 	/* disable clk buf */
 	regmap_update_bits(priv->regmap, MT6359_DCXO_CW12,

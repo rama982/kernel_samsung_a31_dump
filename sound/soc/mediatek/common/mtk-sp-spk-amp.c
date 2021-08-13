@@ -19,6 +19,11 @@
 
 #include "mtk-sp-common.h"
 #include "mtk-sp-spk-amp.h"
+
+#if defined(CONFIG_SND_SOC_AW8896)
+#include "../../codecs/aw8896.h"
+#endif
+
 #if defined(CONFIG_SND_SOC_RT5509)
 #include "../../codecs/rt5509.h"
 #endif
@@ -34,6 +39,19 @@
 #include "aw87339.h"
 #endif
 
+#ifdef CONFIG_SND_SOC_SMA1303
+#include "../../codecs/sma1303.h"
+#endif
+
+#ifdef CONFIG_SND_SOC_SMA1305
+#include "../../codecs/sma1305.h"
+#endif
+
+#ifdef CONFIG_SND_SOC_TAS256X
+#include "../../codecs/tas256x/physical_layer/inc/tas256x.h"
+#include "../../codecs/tas256x/os_layer/inc/tas256x-regmap.h"
+#endif
+
 #define MTK_SPK_NAME "Speaker Codec"
 #define MTK_SPK_REF_NAME "Speaker Codec Ref"
 static unsigned int mtk_spk_type;
@@ -43,6 +61,30 @@ static struct mtk_spk_i2c_ctrl mtk_spk_list[MTK_SPK_TYPE_NUM] = {
 		.codec_dai_name = "snd-soc-dummy-dai",
 		.codec_name = "snd-soc-dummy",
 	},
+#if defined(CONFIG_SND_SOC_AW8896)
+	[MTK_SPK_AWINIC_AW8896] = {
+		.i2c_probe = aw8896_i2c_probe,
+		.i2c_remove = aw8896_i2c_remove,
+		.codec_dai_name = "aw8896-aif",
+		.codec_name = "aw8896_smartpa",
+	},
+#endif
+#ifdef CONFIG_SND_SOC_SMA1303
+	[MTK_SPK_SILICON_SM1303] = {
+		.i2c_probe = sma1303_i2c_probe,
+		.i2c_remove = sma1303_i2c_remove,
+		.codec_dai_name = "sma1303-amplifier",
+		.codec_name = "sma1303.18-001e",
+	},
+#endif /* CONFIG_SND_SOC_SMA1303 */
+#ifdef CONFIG_SND_SOC_SMA1305
+	[MTK_SPK_SILICON_SM1305] = {
+		.i2c_probe = sma1305_i2c_probe,
+		.i2c_remove = sma1305_i2c_remove,
+		.codec_dai_name = "sma1305-amplifier",
+		.codec_name = "sma1305.18-001e",
+	},
+#endif /* CONFIG_SND_SOC_SMA1305 */
 #if defined(CONFIG_SND_SOC_RT5509)
 	[MTK_SPK_RICHTEK_RT5509] = {
 		.i2c_probe = rt5509_i2c_probe,
@@ -60,7 +102,6 @@ static struct mtk_spk_i2c_ctrl mtk_spk_list[MTK_SPK_TYPE_NUM] = {
 		.codec_name = "MT6660_MT_0",
 	},
 #endif /* CONFIG_SND_SOC_MT6660 */
-
 #ifdef CONFIG_SND_SOC_TFA9874
 	[MTK_SPK_NXP_TFA98XX] = {
 		.i2c_probe = tfa98xx_i2c_probe,
@@ -68,7 +109,15 @@ static struct mtk_spk_i2c_ctrl mtk_spk_list[MTK_SPK_TYPE_NUM] = {
 		.codec_dai_name = "tfa98xx-aif",
 		.codec_name = "tfa98xx",
 	},
-#endif /* CONFIG_SND_SOC_MT6660 */
+#endif /* CONFIG_SND_SOC_TFA9874 */
+#ifdef CONFIG_SND_SOC_TAS256X
+	[MTK_SPK_TI_TAS256X] = {
+		.i2c_probe = tas256x_i2c_probe,
+		.i2c_remove = tas256x_i2c_remove,
+		.codec_dai_name = "tas256x ASI1",
+		.codec_name = "tas256x.18-004c",
+	},
+#endif
 };
 
 static int mtk_spk_i2c_probe(struct i2c_client *client,
@@ -445,7 +494,16 @@ EXPORT_SYMBOL(mtk_spk_recv_ipi_buf_from_dsp);
 
 static const struct i2c_device_id mtk_spk_i2c_id[] = {
 	{ "tfa98xx", 0},
+#ifdef CONFIG_SND_SOC_SMA1303
+	{ "sma1303", 0},
+#endif
+#ifdef CONFIG_SND_SOC_SMA1305
+	{ "sma1305", 0},
+#endif
 	{ "speaker_amp", 0},
+#ifdef CONFIG_SND_SOC_TAS256X
+	{ "tas256x", 0},
+#endif
 	{}
 };
 MODULE_DEVICE_TABLE(i2c, mtk_spk_i2c_id);
@@ -453,7 +511,16 @@ MODULE_DEVICE_TABLE(i2c, mtk_spk_i2c_id);
 #ifdef CONFIG_OF
 static const struct of_device_id mtk_spk_match_table[] = {
 	{.compatible = "nxp,tfa98xx",},
+#ifdef CONFIG_SND_SOC_SMA1303
+	{.compatible = "siliconmitus,sma1303",},
+#endif
+#ifdef CONFIG_SND_SOC_SMA1305
+	{.compatible = "siliconmitus,sma1305",},
+#endif
 	{.compatible = "mediatek,speaker_amp",},
+#ifdef CONFIG_SND_SOC_TAS256X
+	{.compatible = "ti,tas256x",},
+#endif
 	{},
 };
 MODULE_DEVICE_TABLE(of, mtk_spk_match_table);
@@ -461,7 +528,13 @@ MODULE_DEVICE_TABLE(of, mtk_spk_match_table);
 
 static struct i2c_driver mtk_spk_i2c_driver = {
 	.driver = {
+#ifdef CONFIG_SND_SOC_SMA1303
+		.name = "sma1303",
+#elif defined CONFIG_SND_SOC_SMA1305
+		.name = "sma1305",
+#else
 		.name = "speaker_amp",
+#endif
 		.owner = THIS_MODULE,
 		.of_match_table = of_match_ptr(mtk_spk_match_table),
 	},

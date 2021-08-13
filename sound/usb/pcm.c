@@ -24,6 +24,7 @@
 #include <linux/io.h>
 #include <linux/module.h>
 #include <linux/pm_qos.h>
+#include <linux/usb_notify.h>
 
 #include <sound/core.h>
 #include <sound/pcm.h>
@@ -884,7 +885,7 @@ static int snd_usb_pcm_prepare(struct snd_pcm_substream *substream)
 	struct usb_interface *iface;
 	int ret;
 
-	if (! subs->cur_audiofmt) {
+	if (!subs->cur_audiofmt) {
 		dev_err(&subs->dev->dev, "no format is specified!\n");
 		return -ENXIO;
 	}
@@ -1332,6 +1333,16 @@ static int snd_usb_pcm_open(struct snd_pcm_substream *substream, int direction)
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct snd_usb_substream *subs = &as->substream[direction];
 
+#ifdef CONFIG_USB_NOTIFY_PROC_LOG
+	int enable = 1, type = 0;
+
+	if (direction == SNDRV_PCM_STREAM_PLAYBACK)
+		type = NOTIFY_PCM_PLAYBACK;
+	else
+		type = NOTIFY_PCM_CAPTURE;
+	store_usblog_notify(type, (void *)&enable, NULL);
+#endif
+
 	subs->interface = -1;
 	subs->altset_idx = 0;
 	runtime->hw = snd_usb_hardware;
@@ -1351,6 +1362,16 @@ static int snd_usb_pcm_close(struct snd_pcm_substream *substream, int direction)
 {
 	struct snd_usb_stream *as = snd_pcm_substream_chip(substream);
 	struct snd_usb_substream *subs = &as->substream[direction];
+
+#ifdef CONFIG_USB_NOTIFY_PROC_LOG
+		int enable = 0, type = 0;
+
+		if (direction == SNDRV_PCM_STREAM_PLAYBACK)
+			type = NOTIFY_PCM_PLAYBACK;
+		else
+			type = NOTIFY_PCM_CAPTURE;
+		store_usblog_notify(type, (void *)&enable, NULL);
+#endif
 
 	stop_endpoints(subs, true);
 

@@ -29,6 +29,12 @@
 #define EXT_SPK_AMP_W_NAME "Ext_Speaker_Amp"
 
 static const char *const mt6853_spk_type_str[] = {MTK_SPK_NOT_SMARTPA_STR,
+#ifdef CONFIG_SND_SOC_SMA1303
+						  MTK_SPK_SILICON_SM1303_STR,
+#endif
+#ifdef CONFIG_SND_SOC_TAS256X
+						  MTK_SPK_TI_TAS256X_STR,
+#endif
 						  MTK_SPK_RICHTEK_RT5509_STR,
 						  MTK_SPK_MEDIATEK_MT6660_STR,
 						  MTK_SPK_NXP_TFA98XX_STR
@@ -322,6 +328,7 @@ static int mt6853_mt6359_init(struct snd_soc_pcm_runtime *rtd)
 	return 0;
 }
 
+#if !defined(CONFIG_SND_SOC_SMA1303)
 static int mt6853_i2s_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 				      struct snd_pcm_hw_params *params)
 {
@@ -334,6 +341,7 @@ static int mt6853_i2s_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 	params_set_format(params, SNDRV_PCM_FORMAT_S32_LE);
 	return 0;
 }
+#endif
 
 #ifdef CONFIG_MTK_VOW_SUPPORT
 static const struct snd_pcm_hardware mt6853_mt6359_vow_hardware = {
@@ -725,6 +733,19 @@ static struct snd_soc_dai_link mt6853_mt6359_dai_links[] = {
 		.ignore_suspend = 1,
 	},
 	{
+		.name = "Hostless_HWGain_1",
+		.stream_name = "Hostless_HWGain_1",
+		.cpu_dai_name = "Hostless_HWGain_1_DAI",
+		.codec_name = "snd-soc-dummy",
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.trigger = {SND_SOC_DPCM_TRIGGER_PRE,
+			    SND_SOC_DPCM_TRIGGER_PRE},
+		.dynamic = 1,
+		.dpcm_playback = 1,
+		.dpcm_capture = 1,
+		.ignore_suspend = 1,
+	},
+	{
 		.name = "Hostless_SRC_Bargein",
 		.stream_name = "Hostless_SRC_Bargein",
 		.cpu_dai_name = "Hostless_SRC_Bargein_DAI",
@@ -783,7 +804,9 @@ static struct snd_soc_dai_link mt6853_mt6359_dai_links[] = {
 		.no_pcm = 1,
 		.dpcm_playback = 1,
 		.ignore_suspend = 1,
+#if !defined(CONFIG_SND_SOC_SMA1303)
 		.be_hw_params_fixup = mt6853_i2s_hw_params_fixup,
+#endif
 	},
 	{
 		.name = "I2S0",
@@ -793,7 +816,9 @@ static struct snd_soc_dai_link mt6853_mt6359_dai_links[] = {
 		.no_pcm = 1,
 		.dpcm_capture = 1,
 		.ignore_suspend = 1,
+#if !defined(CONFIG_SND_SOC_SMA1303)
 		.be_hw_params_fixup = mt6853_i2s_hw_params_fixup,
+#endif
 	},
 	{
 		.name = "I2S1",
@@ -803,7 +828,9 @@ static struct snd_soc_dai_link mt6853_mt6359_dai_links[] = {
 		.no_pcm = 1,
 		.dpcm_playback = 1,
 		.ignore_suspend = 1,
+#if !defined(CONFIG_SND_SOC_SMA1303)
 		.be_hw_params_fixup = mt6853_i2s_hw_params_fixup,
+#endif
 	},
 	{
 		.name = "I2S2",
@@ -813,7 +840,9 @@ static struct snd_soc_dai_link mt6853_mt6359_dai_links[] = {
 		.no_pcm = 1,
 		.dpcm_capture = 1,
 		.ignore_suspend = 1,
+#if !defined(CONFIG_SND_SOC_SMA1303)
 		.be_hw_params_fixup = mt6853_i2s_hw_params_fixup,
+#endif
 	},
 	{
 		.name = "I2S5",
@@ -823,7 +852,9 @@ static struct snd_soc_dai_link mt6853_mt6359_dai_links[] = {
 		.no_pcm = 1,
 		.dpcm_playback = 1,
 		.ignore_suspend = 1,
+#if !defined(CONFIG_SND_SOC_SMA1303)
 		.be_hw_params_fixup = mt6853_i2s_hw_params_fixup,
+#endif
 	},
 	{
 		.name = "HW Gain 1",
