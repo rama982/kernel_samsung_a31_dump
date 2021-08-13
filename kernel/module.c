@@ -67,6 +67,16 @@
 #include <uapi/linux/module.h>
 #include "module-internal.h"
 
+#ifdef CONFIG_UH
+#include <linux/uh.h>
+#ifdef CONFIG_UH_RKP
+#include <linux/rkp.h>
+#endif
+#endif
+#ifdef CONFIG_RUSTUH_RKP
+#include <linux/rustrkp.h>
+#endif
+
 #define CREATE_TRACE_POINTS
 #include <trace/events/module.h>
 
@@ -3458,6 +3468,9 @@ static noinline int do_init_module(struct module *mod)
 {
 	int ret = 0;
 	struct mod_initfree *freeinit;
+#if defined(CONFIG_UH_RKP) || defined(CONFIG_RUSTUH_RKP)
+	struct module_info rkp_mod_info;
+#endif
 
 	freeinit = kmalloc(sizeof(*freeinit), GFP_KERNEL);
 	if (!freeinit) {
@@ -3524,6 +3537,16 @@ static noinline int do_init_module(struct module *mod)
 	mod_tree_remove_init(mod);
 	disable_ro_nx(&mod->init_layout);
 	module_arch_freeing_init(mod);
+#if defined(CONFIG_UH_RKP) || defined(CONFIG_RUSTUH_RKP)
+	rkp_mod_info.base_va = 0;
+	rkp_mod_info.vm_size = 0;
+	rkp_mod_info.core_base_va = (u64)mod->core_layout.base;
+	rkp_mod_info.core_text_size = (u64)mod->core_layout.text_size;
+	rkp_mod_info.core_ro_size = (u64)mod->core_layout.ro_size;
+	rkp_mod_info.init_base_va = (u64)mod->init_layout.base;
+	rkp_mod_info.init_text_size = (u64)mod->init_layout.text_size;
+	uh_call(UH_APP_RKP, RKP_MODULE_LOAD, RKP_MODULE_PXN_SET, (u64)&rkp_mod_info, 0, 0);
+#endif
 	mod->init_layout.base = NULL;
 	mod->init_layout.size = 0;
 	mod->init_layout.ro_size = 0;
@@ -3612,6 +3635,9 @@ out_unlocked:
 static int complete_formation(struct module *mod, struct load_info *info)
 {
 	int err;
+#if defined(CONFIG_UH_RKP) || defined(CONFIG_RUSTUH_RKP)
+	struct module_info rkp_mod_info;
+#endif
 
 	mutex_lock(&module_mutex);
 
@@ -3630,6 +3656,16 @@ static int complete_formation(struct module *mod, struct load_info *info)
 	 * but kallsyms etc. can see us. */
 	mod->state = MODULE_STATE_COMING;
 	mutex_unlock(&module_mutex);
+#if defined(CONFIG_UH_RKP) || defined(CONFIG_RUSTUH_RKP)
+	rkp_mod_info.base_va = 0;
+	rkp_mod_info.vm_size = 0;
+	rkp_mod_info.core_base_va = (u64)mod->core_layout.base;
+	rkp_mod_info.core_text_size = (u64)mod->core_layout.text_size;
+	rkp_mod_info.core_ro_size = (u64)mod->core_layout.ro_size;
+	rkp_mod_info.init_base_va = (u64)mod->init_layout.base;
+	rkp_mod_info.init_text_size = (u64)mod->init_layout.text_size;
+	uh_call(UH_APP_RKP, RKP_MODULE_LOAD, RKP_MODULE_PXN_CLEAR, (u64)&rkp_mod_info, 0, 0);
+#endif
 
 	return 0;
 
@@ -4474,8 +4510,7 @@ int save_modules(char *mbuf, int mbufsize)
 			if (!search_nm)
 				break;
 		}
-		sz += snprintf(mbuf + sz, mbufsize - sz,
-				" %s 0x%lx 0x%lx %d %d %s",
+		sz += snprintf(mbuf + sz, mbufsize - sz, " %s %px %px %d %d %s",
 				mod->name,
 				text_addr,
 				init_addr,

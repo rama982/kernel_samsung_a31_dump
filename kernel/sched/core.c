@@ -61,9 +61,9 @@
 #include <linux/arm-smccc.h>
 #define GIC_ISO_CODE (1 << 0)
 #endif
-#ifdef CONFIG_MTK_QOS_FRAMEWORK
-#include <mt-plat/mtk_qos_prefetch_common.h>
-#endif /* CONFIG_MTK_QOS_FRAMEWORK */
+#ifdef CONFIG_SEC_DEBUG_EXTRA_INFO
+#include <linux/sec_debug.h>
+#endif
 
 DEFINE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
 
@@ -1561,7 +1561,7 @@ retry:
 		/* Refcounting is expected to be always 0 for free groups */
 		if (unlikely(uc_cpu->group[clamp_id][group_id].tasks)) {
 #ifdef CONFIG_SCHED_DEBUG
-			pr_warn("invalid CPU[%d] clamp group [%u:%u] refcount: [%u]\n",
+			WARN(1, "invalid CPU[%d] clamp group [%u:%u] refcount: [%u]\n",
 			     cpu, clamp_id, group_id,
 			     uc_cpu->group[clamp_id][group_id].tasks);
 #endif
@@ -2093,8 +2093,11 @@ static inline bool is_per_cpu_kthread(struct task_struct *p)
  */
 static inline bool is_cpu_allowed(struct task_struct *p, int cpu)
 {
-	if (!cpumask_test_cpu(cpu, &p->cpus_allowed))
-		return false;
+#ifdef CONFIG_SEC_PERF_MANAGER
+	if (!p->drawing_flag)
+#endif
+		if (!cpumask_test_cpu(cpu, &p->cpus_allowed))
+			return false;
 
 	if (is_per_cpu_kthread(p))
 		return cpu_online(cpu);
@@ -4346,6 +4349,9 @@ void scheduler_tick(void)
 #ifdef CONFIG_MTK_CACHE_CONTROL
 	hook_ca_scheduler_tick(cpu);
 #endif
+#ifdef CONFIG_MTK_PERF_TRACKER
+	perf_tracker(ktime_get_ns());
+#endif
 
 #ifdef CONFIG_SMP
 	rq->idle_balance = idle_cpu(cpu);
@@ -4357,20 +4363,12 @@ void scheduler_tick(void)
 	sched_max_util_task_tracking();
 #endif
 
-#ifdef CONFIG_MTK_PERF_TRACKER
-	perf_tracker(ktime_get_ns());
-#endif
-
 #ifdef CONFIG_MTK_SCHED_CPULOAD
 	cal_cpu_load(cpu);
 #endif
 
 	if (curr->sched_class == &fair_sched_class)
 		check_for_migration(rq, curr);
-
-#ifdef CONFIG_MTK_QOS_FRAMEWORK
-	qos_prefetch_tick(cpu);
-#endif /* CONFIG_MTK_QOS_FRAMEWORK */
 }
 
 #ifdef CONFIG_NO_HZ_FULL
@@ -4498,8 +4496,13 @@ static noinline void __schedule_bug(struct task_struct *prev)
 	if (oops_in_progress)
 		return;
 
+#ifdef CONFIG_SEC_DEBUG_AUTO_COMMENT
+	pr_auto(ASL6, "BUG: scheduling while atomic: %s/%d/0x%08x\n",
+		prev->comm, prev->pid, preempt_count());
+#else
 	printk(KERN_ERR "BUG: scheduling while atomic: %s/%d/0x%08x\n",
 		prev->comm, prev->pid, preempt_count());
+#endif
 
 	debug_show_held_locks(prev);
 	print_modules();
@@ -6916,14 +6919,6 @@ static void migrate_tasks(struct rq *dead_rq, struct rq_flags *rf,
 			break;
 
 		/*
-		 * put_prev_task() and pick_next_task() sched
-		 * class method both need to have an up-to-date
-		 * value of rq->clock[_task],
-		 * this value may be changed, so must update again.
-		 */
-		if (!(rq->clock_update_flags & RQCF_UPDATED))
-			update_rq_clock(rq);
-		/*
 		 * pick_next_task() assumes pinned rq->lock:
 		 */
 		next = pick_next_task(rq, &fake_task, rf);
@@ -7142,7 +7137,6 @@ out:
 			__func__, iso_prio, cpu, cpu_isolated_mask->bits[0]);
 	return ret_code;
 }
-EXPORT_SYMBOL(_sched_isolate_cpu);
 
 /*
  * Note: The client calling sched_isolate_cpu() is repsonsible for ONLY
@@ -7150,7 +7144,7 @@ EXPORT_SYMBOL(_sched_isolate_cpu);
  * Client is also responsible for deisolating when a core goes offline
  * (after CPU is marked offline).
  */
-int sched_deisolate_cpu_unlocked(int cpu)
+int __sched_deisolate_cpu_unlocked(int cpu)
 {
 	int ret_code = 0;
 	struct rq *rq = cpu_rq(cpu);
@@ -7202,11 +7196,10 @@ int _sched_deisolate_cpu(int cpu)
 	int ret_code;
 
 	cpu_maps_update_begin();
-	ret_code = sched_deisolate_cpu_unlocked(cpu);
+	ret_code = __sched_deisolate_cpu_unlocked(cpu);
 	cpu_maps_update_done();
 	return ret_code;
 }
-EXPORT_SYMBOL(_sched_deisolate_cpu);
 
 void iso_cpumask_init(void)
 {
@@ -7479,9 +7472,9 @@ static void sched_rq_cpu_starting(unsigned int cpu)
 	struct rq *rq = cpu_rq(cpu);
 	struct rq_flags rf;
 
-	rq_lock_irqsave(rq, &rf);
+	rq_lock(rq, &rf);
 	walt_set_window_start(rq, &rf);
-	rq_unlock_irqrestore(rq, &rf);
+	rq_unlock(rq, &rf);
 
 	rq->calc_load_update = calc_load_update;
 	update_max_interval();
@@ -7833,9 +7826,15 @@ void ___might_sleep(const char *file, int line, int preempt_offset)
 	/* Save this before calling printk(), since that will clobber it: */
 	preempt_disable_ip = get_preempt_disable_ip(current);
 
+#ifdef CONFIG_SEC_DEBUG_AUTO_COMMENT
+	pr_auto(ASL6,
+		"BUG: sleeping function called from invalid context at %s:%d\n",
+			file, line);
+#else
 	printk(KERN_ERR
 		"BUG: sleeping function called from invalid context at %s:%d\n",
 			file, line);
+#endif
 	printk(KERN_ERR
 		"in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 			in_atomic(), irqs_disabled(),

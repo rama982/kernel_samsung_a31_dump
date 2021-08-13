@@ -376,24 +376,17 @@ static inline unsigned int hmp_select_faster_cpu(struct task_struct *tsk,
 	int lowest_cpu = num_possible_cpus();
 	__always_unused int lowest_ratio =
 		hmp_domain_min_load(hmp_faster_domain(cpu), &lowest_cpu);
-	struct cpumask act_faster_mask;
-	int act_faster_cpu = cpu;
 	/*
 	 * If the lowest-loaded CPU in the domain is allowed by
 	 * the task affinity.
 	 * Select that one, otherwise select one which is allowed
 	 */
 	if (lowest_cpu < nr_cpu_ids &&
-			cpumask_test_cpu(lowest_cpu, &tsk->cpus_allowed)
-			&& !cpu_isolated(lowest_cpu))
+			cpumask_test_cpu(lowest_cpu, &tsk->cpus_allowed))
 		return lowest_cpu;
-	else {
-		cpumask_andnot(&act_faster_mask,
-				&hmp_faster_domain(cpu)->cpus, cpu_isolated_mask);
-		act_faster_cpu = cpumask_any_and(&act_faster_mask,
+	else
+		return cpumask_any_and(&hmp_faster_domain(cpu)->cpus,
 				&tsk->cpus_allowed);
-		return act_faster_cpu;
-	}
 }
 
 static inline void hmp_next_up_delay(struct sched_entity *se, int cpu)
@@ -553,6 +546,10 @@ static int hmp_select_task_migration(int sd_flag,
 	 * Case 1: return the runqueue whose load is minimum
 	 * Case 2: return original CFS runqueue selection result
 	 */
+#ifdef CONFIG_PRIO_LIMIT_HMP_BOOST
+	if (task_low_priority(p->prio))
+		goto select_slow;
+#endif
 	if (B_target >= num_possible_cpus() && L_target >= num_possible_cpus())
 		goto out;
 	if (B_target >= num_possible_cpus())
@@ -625,7 +622,11 @@ static int hmp_select_task_rq_fair(int sd_flag, struct task_struct *p,
 	struct list_head *pos;
 	struct cpumask fast_cpu_mask, slow_cpu_mask;
 
-	if (idle_cpu(new_cpu) && hmp_cpu_is_fastest(new_cpu) && !cpu_isolated(new_cpu))
+#ifdef CONFIG_PRIO_LIMIT_HMP_BOOST
+	if (idle_cpu(new_cpu) && hmp_cpu_is_fastest(new_cpu) && !task_low_priority(p->prio))
+#else
+	if (idle_cpu(new_cpu) && hmp_cpu_is_fastest(new_cpu))
+#endif
 		return new_cpu;
 
 	/* error handling */
@@ -646,10 +647,8 @@ static int hmp_select_task_rq_fair(int sd_flag, struct task_struct *p,
 		struct hmp_domain *domain;
 
 		domain = list_entry(pos, struct hmp_domain, hmp_domains);
-		if (cpumask_empty(&domain->cpus) ||
-			cpumask_subset(&domain->possible_cpus, cpu_isolated_mask))
+		if (cpumask_empty(&domain->cpus))
 			continue;
-
 		if (cpumask_empty(&fast_cpu_mask)) {
 			cpumask_copy(&fast_cpu_mask, &domain->possible_cpus);
 		} else {
@@ -672,11 +671,11 @@ out:
 }
 
 #define hmp_fast_cpu_has_spare_cycles(B, cpu_load) \
-		((cpu_load * capacity_margin) < (SCHED_CAPACITY_SCALE * 1024))
+		(cpu_load * capacity_margin < (SCHED_CAPACITY_SCALE * 1024))
 
 #define hmp_task_fast_cpu_afford(B, se, cpu) \
-		((B->acap > 0) && hmp_fast_cpu_has_spare_cycles(B, \
-		(se_load(se) + cfs_load(cpu))))
+		(B->acap > 0 && hmp_fast_cpu_has_spare_cycles(B, \
+		se_load(se) + cfs_load(cpu)))
 
 #define hmp_fast_cpu_oversubscribed(caller, B, se, cpu) \
 	(hmp_caller_is_gb(caller) ? \
@@ -764,7 +763,11 @@ static unsigned int hmp_up_migration(int cpu,
 
 	/* [2] Filter low-priority task */
 #ifdef CONFIG_SCHED_HMP_PRIO_FILTER
+#ifdef CONFIG_PRIO_LIMIT_HMP_BOOST
+	if (task_low_priority(p->prio)) {
+#else
 	if (hmp_low_prio_task_up_rejected(p, B, L)) {
+#endif
 		check->status |= HMP_LOW_PRIORITY_FILTER;
 		goto trace;
 	}
@@ -879,7 +882,11 @@ static unsigned int hmp_down_migration(int cpu,
 
 	/* [2] Filter low-priority task */
 #ifdef CONFIG_SCHED_HMP_PRIO_FILTER
+#ifdef CONFIG_PRIO_LIMIT_HMP_BOOST
+	if (task_low_priority(p->prio)) {
+#else
 	if (hmp_low_prio_task_down_allowed(p, B, L)) {
+#endif
 		cfs_nr_dequeuing_low_prio(curr_cpu)++;
 		check->status |= HMP_LOW_PRIORITY_FILTER;
 		check->status |= HMP_MIGRATION_APPROVED;
@@ -1166,7 +1173,15 @@ static void hmp_force_up_migration(int this_cpu)
 #endif
 			p = task_of(se);
 
+#ifdef CONFIG_PRIO_LIMIT_HMP_BOOST
+		if (task_low_priority(p->prio)) {
+			raw_spin_unlock_irqrestore(&target->lock, flags);
+			continue;
+		}
+#endif
+
 		target_cpu = hmp_select_cpu(HMP_GB, p, &fast_cpu_mask, -1, 0);
+
 		if (target_cpu >= num_possible_cpus()) {
 			raw_spin_unlock_irqrestore(&target->lock, flags);
 			continue;
@@ -1317,11 +1332,19 @@ static unsigned int hmp_idle_pull(int this_cpu)
 		clbenv.ltarget = cpu;
 		sched_update_clbstats(&clbenv);
 
+#ifdef CONFIG_PRIO_LIMIT_HMP_BOOST
+		if (curr && entity_is_task(curr) && (!task_low_priority(task_of(curr)->prio)) &&
+				(se_load(curr) > clbenv.bstats.threshold) &&
+				(se_load(curr) > ratio) &&
+				cpumask_test_cpu(this_cpu,
+					&task_of(curr)->cpus_allowed)) {
+#else
 		if (curr && entity_is_task(curr) &&
 				(se_load(curr) > clbenv.bstats.threshold) &&
 				(se_load(curr) > ratio) &&
 				cpumask_test_cpu(this_cpu,
 					&task_of(curr)->cpus_allowed)) {
+#endif
 			selected = 1;
 			/* get task and selection inside rq lock  */
 			p = task_of(curr);
@@ -1385,6 +1408,9 @@ static struct sched_entity *hmp_get_heaviest_task(
 	se = __pick_first_entity(cfs_rq_of(se));
 	while (num_tasks && se) {
 		if (entity_is_task(se) && se->avg.loadwop_avg > max_ratio &&
+#ifdef CONFIG_PRIO_LIMIT_HMP_BOOST
+				!task_low_priority(&task_of(se)->prio) &&
+#endif
 				cpumask_intersects(hmp_target_mask,
 					&task_of(se)->cpus_allowed)) {
 			max_se = se;

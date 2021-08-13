@@ -119,6 +119,16 @@ unsigned int normalized_sysctl_sched_wakeup_granularity	= 1000000UL;
 
 const_debug unsigned int sysctl_sched_migration_cost	= 33000UL;
 
+#ifdef CONFIG_SEC_PERF_MANAGER
+unsigned long get_boosted_task_util(struct task_struct *p);
+unsigned long get_max_fps_util(int group_id);
+
+DEFINE_PER_CPU(unsigned long, fps_boosted_util);
+DEFINE_PER_CPU(int, fps_boosted_task_count);
+DEFINE_PER_CPU(u64, fps_boosted_last_time);
+DEFINE_PER_CPU(int, fps_group_id);
+#endif /* CONFIG_SEC_PERF_MANAGER */
+
 #ifdef CONFIG_SCHED_WALT
 unsigned int sysctl_sched_use_walt_cpu_util = 1;
 unsigned int sysctl_sched_use_walt_task_util = 1;
@@ -804,11 +814,10 @@ void post_init_entity_util_avg(struct sched_entity *se)
 	struct sched_avg *sa = &se->avg;
 	long cpu_scale = arch_scale_cpu_capacity(NULL, cpu_of(rq_of(cfs_rq)));
 	long cap = (long)(cpu_scale - cfs_rq->avg.util_avg) / 2;
-	int forked_ramup_factor = sched_forked_ramup_factor();
 
-	if (forked_ramup_factor != 0) {
-
-		cap = (long) SCHED_CAPACITY_SCALE * forked_ramup_factor / 100;
+	if (sched_forked_ramup_factor() != 0) {
+		cap = (long)(SCHED_CAPACITY_SCALE - cfs_rq->avg.util_avg) *
+				sched_forked_ramup_factor() / 100;
 	}
 
 	if (cap > 0) {
@@ -3498,9 +3507,6 @@ update_cfs_rq_load_avg(u64 now, struct cfs_rq *cfs_rq)
 {
 	struct sched_avg *sa = &cfs_rq->avg;
 	int decayed, removed_load = 0, removed_util = 0;
-	struct rq *rq = rq_of(cfs_rq);
-	bool is_clamped = false;
-	int clamp_id = 0;
 
 	if (atomic_long_read(&cfs_rq->removed_load_avg)) {
 		s64 r = atomic_long_xchg(&cfs_rq->removed_load_avg, 0);
@@ -3525,12 +3531,7 @@ update_cfs_rq_load_avg(u64 now, struct cfs_rq *cfs_rq)
 	cfs_rq->load_last_update_time_copy = sa->last_update_time;
 #endif
 
-	for (clamp_id = UCLAMP_MIN; clamp_id < UCLAMP_CNT; clamp_id++) {
-		if (rq && rq->uclamp.value[clamp_id] != uclamp_none(clamp_id))
-			is_clamped = true;
-	}
-
-	if (decayed || removed_util || is_clamped)
+	if (decayed || removed_util)
 		cfs_rq_util_change(cfs_rq);
 
 	return decayed || removed_load;
@@ -5340,7 +5341,13 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	struct cfs_rq *cfs_rq;
 	struct sched_entity *se = &p->se;
 	int task_new = !(flags & ENQUEUE_WAKEUP);
-	int is_idle = idle_cpu(cpu_of(rq));
+
+#ifdef CONFIG_SEC_PERF_MANAGER
+	unsigned long next_fps_boosted_util;
+	int boosted_cnt = 0;
+	int cur_group_id = -1, next_group_id = -1;
+	int alloc_cpu = -1;
+#endif
 
 	/*
 	 * The code below (indirectly) updates schedutil which looks at
@@ -5367,6 +5374,31 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	 * also for throttled RQs.
 	 */
 	schedtune_enqueue_task(p, cpu_of(rq));
+
+#ifdef CONFIG_SEC_PERF_MANAGER
+	if ( p->drawing_flag ){
+		alloc_cpu = cpu_of(rq);
+		
+		/* Get current value from run queue */
+		boosted_cnt = per_cpu(fps_boosted_task_count, alloc_cpu);
+		cur_group_id = per_cpu(fps_group_id, alloc_cpu);
+		next_group_id = p->drawing_flag;
+
+		/* Get new values. */
+		if ( boosted_cnt < 0) boosted_cnt = 0;
+		boosted_cnt = boosted_cnt + 1;
+		next_fps_boosted_util = get_max_fps_util(p->drawing_flag);
+
+		/* Put new values into run queue. */
+		per_cpu(fps_boosted_task_count, alloc_cpu) = boosted_cnt;
+		if (cur_group_id == next_group_id){
+			per_cpu(fps_boosted_util, alloc_cpu) = next_fps_boosted_util;
+		}else {
+			per_cpu(fps_boosted_util, alloc_cpu) = max(get_max_fps_util(cur_group_id), next_fps_boosted_util);
+			per_cpu(fps_group_id, alloc_cpu) = next_group_id;
+		}
+	}
+#endif /* CONFIG_SEC_PERF_MANAGER */
 
 	/*
 	 * If in_iowait is set, the code below may not trigger any cpufreq
@@ -5410,12 +5442,6 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 
 	if (!se) {
 		add_nr_running(rq, 1);
-		/* if first is idle, some governors may not
-		 * update frequency, we must update again,
-		 * because idle_cpu return false until now.
-		 */
-		if (is_idle)
-			cfs_rq_util_change(&rq->cfs);
 #ifdef CONFIG_MTK_SCHED_RQAVG_US
 		inc_nr_heavy_running(2, p, 1, false);
 #endif
@@ -5440,6 +5466,14 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	struct sched_entity *se = &p->se;
 	int task_sleep = flags & DEQUEUE_SLEEP;
 
+#ifdef CONFIG_SEC_PERF_MANAGER
+	unsigned long next_fps_boosted_util = 0;
+	int cur_group_id = -1, next_group_id = -1;
+	int alloc_cpu = -1;
+	int boosted_cnt;
+	struct task_struct *rq_task;
+#endif /* CONFIG_SEC_PERF_MANAGER */
+
 	/*
 	 * The code below (indirectly) updates schedutil which looks at
 	 * the cfs_rq utilization to select a frequency.
@@ -5447,6 +5481,39 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	 * current task is not more accounted for in the selection of the OPP.
 	 */
 	schedtune_dequeue_task(p, cpu_of(rq));
+
+#ifdef CONFIG_SEC_PERF_MANAGER
+	if ( p->drawing_flag ){
+		alloc_cpu = cpu_of(rq);
+		boosted_cnt = per_cpu(fps_boosted_task_count, alloc_cpu);
+		cur_group_id = per_cpu(fps_group_id, alloc_cpu);
+		next_group_id = p->drawing_flag;
+
+		if (boosted_cnt > 0){
+			boosted_cnt = boosted_cnt - 1;
+		}
+
+		/*
+		*  Initialize fps_boosted_util value when there's no task on alloc_cpu.
+		*  if not, update fps util as a current fps util.
+		*/
+		if (boosted_cnt == 0){
+			per_cpu(fps_boosted_util, alloc_cpu) = 0;
+			per_cpu(fps_group_id, alloc_cpu) = 0;
+		}else{
+			list_for_each_entry(rq_task, &(rq->cfs_tasks), se.group_node) {
+				if ( rq_task != p && rq_task->drawing_flag && (get_max_fps_util(rq_task->drawing_flag) > next_fps_boosted_util) ){
+					next_fps_boosted_util = get_max_fps_util(p->drawing_flag);
+					next_group_id = rq_task->drawing_flag;
+				}
+			}
+			per_cpu(fps_boosted_util, alloc_cpu) = next_fps_boosted_util;
+			per_cpu(fps_group_id, alloc_cpu) = next_group_id;
+		}
+		/* Set a new values up into run queue. */
+		per_cpu(fps_boosted_task_count, alloc_cpu) = boosted_cnt;
+	}
+#endif /* CONFIG_SEC_PERF_MANAGER */
 
 	for_each_sched_entity(se) {
 		cfs_rq = cfs_rq_of(se);
@@ -6937,9 +7004,19 @@ boosted_cpu_util(int cpu)
 	unsigned long util = cpu_util_freq(cpu);
 	long margin = schedtune_cpu_margin(util, cpu);
 
-	trace_sched_boost_cpu(cpu, util, margin);
+#ifdef CONFIG_SEC_PERF_MANAGER
+	unsigned long boosted_util;
+	unsigned long fps_util = per_cpu(fps_boosted_util, cpu);
 
+	boosted_util = max(fps_util, util + margin);
+
+	trace_sched_boost_cpu(cpu, boosted_util, margin);
+	return boosted_util;
+#else
+
+	trace_sched_boost_cpu(cpu, util, margin);
 	return util + margin;
+#endif /* CONFIG_SEC_PERF_MANAGER */
 }
 
 static inline unsigned long
@@ -6949,16 +7026,30 @@ boosted_task_util(struct task_struct *task)
 	long margin = schedtune_task_margin(task);
 	unsigned long util_min = uclamp_task_effective_util(task, UCLAMP_MIN);
 	unsigned long util_max = uclamp_task_effective_util(task, UCLAMP_MAX);
+#ifdef CONFIG_SEC_PERF_MANAGER
+	unsigned long fps_util = 0;
+#endif /* CONFIG_SEC_PERF_MANAGER */
 
 	trace_sched_boost_task(task, util, margin, util_min);
 
-	/* only boosted for heavy task */
-	if (util >= stune_task_threshold) {
-		util = util + margin;
-		return clamp(util, util_min, util_max);
-	} else {
-		return clamp(util, util_min, util_max);
+#ifdef CONFIG_SEC_PERF_MANAGER
+	if (task->drawing_flag)
+		fps_util = get_max_fps_util(task->drawing_flag);
+
+	if (fps_util > 0)
+		return max(fps_util, util + margin);
+	else {
+#endif /* CONFIG_SEC_PERF_MANAGER */
+		/* only boosted for heavy task */
+		if (util >= stune_task_threshold) {
+			util = util + margin;
+			return clamp(util, util_min, util_max);
+		} else {
+			return clamp(util, util_min, util_max);
+		}
+#ifdef CONFIG_SEC_PERF_MANAGER
 	}
+#endif
 }
 
 void get_task_util(struct task_struct *p, unsigned long *util,
@@ -8359,7 +8450,11 @@ SELECT_TASK_RQ_FAIR(struct task_struct *p, int prev_cpu, int sd_flag,
 	int sync = wake_flags & WF_SYNC;
 	int select_reason = LB_PREV;
 
+#ifdef CONFIG_PRIO_LIMIT_HMP_BOOST
+	if (should_hmp(cpu) && p->mm && (sd_flag & SD_BALANCE_FORK) && !task_low_priority(p->prio)) {
+#else
 	if (should_hmp(cpu) && p->mm && (sd_flag & SD_BALANCE_FORK)) {
+#endif
 		int hmp_cpu;
 		/* HMP fork balance:
 		 * always put non-kernel forking tasks on a big domain
@@ -9173,6 +9268,12 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 	int tsk_cache_hot;
 
 	lockdep_assert_held(&env->src_rq->lock);
+
+#ifdef CONFIG_PRIO_LIMIT_HMP_BOOST
+	if (should_hmp(env->src_cpu) && task_low_priority(p->prio) &&
+	     capacity_of(env->src_cpu) < capacity_of(env->dst_cpu))
+		return 0;
+#endif
 
 	/*
 	 * We do not migrate tasks that are:
@@ -10041,7 +10142,7 @@ static inline void update_sg_lb_stats(struct lb_env *env,
 		}
 	}
 	/* Isolated CPU has no weight */
-	if (!group->group_weight || !group->sgc->capacity) {
+	if (!group->group_weight) {
 		sgs->group_capacity = 0;
 		sgs->avg_load = 0;
 		sgs->group_no_capacity = 1;
@@ -10634,10 +10735,6 @@ static struct sched_group *find_busiest_group(struct lb_env *env)
 	local = &sds.local_stat;
 	busiest = &sds.busiest_stat;
 
-	/* if cpu was isolated, then discard load balance*/
-	if (local->group_capacity == 0 || busiest->group_capacity == 0)
-		goto out_balanced;
-
 	/* ASYM feature bypasses nice load balance check */
 	if (check_asym_packing(env, &sds))
 		return sds.busiest;
@@ -11135,6 +11232,14 @@ more_balance:
 				env.flags |= LBF_ALL_PINNED;
 				goto out_one_pinned;
 			}
+#ifdef CONFIG_PRIO_LIMIT_HMP_BOOST
+			if ((capacity_of(env.src_cpu) < capacity_of(env.dst_cpu)) &&
+			      should_hmp(env.src_cpu) && task_low_priority(busiest->curr->prio)) {
+				raw_spin_unlock_irqrestore(&busiest->lock, flags);
+				env.flags |= LBF_ALL_PINNED;
+				goto out_one_pinned;
+			}
+#endif
 #endif
 
 			/*
@@ -12686,3 +12791,13 @@ __init void init_sched_fair_class(void)
 }
 #include "eas_plus.c"
 #include "hmp.c"
+
+#ifdef CONFIG_SEC_PERF_MANAGER
+
+unsigned long get_boosted_task_util(struct task_struct *p)
+{
+	return task_util_est(p);
+}
+EXPORT_SYMBOL_GPL(get_boosted_task_util);
+
+#endif /* CONFIG_SEC_PERF_MANAGER */

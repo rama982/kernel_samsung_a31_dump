@@ -1705,6 +1705,9 @@ int hrtimers_prepare_cpu(unsigned int cpu)
 	cpu_base->active_bases = 0;
 	cpu_base->cpu = cpu;
 	hrtimer_init_hres(cpu_base);
+
+	restore_pcpu_tick(cpu);
+
 	return 0;
 }
 
@@ -1794,6 +1797,7 @@ static void __migrate_hrtimers(unsigned int scpu, bool remove_pinned)
 int hrtimers_dead_cpu(unsigned int scpu)
 {
 	WARN_ON(cpu_online(scpu));
+	save_pcpu_tick(scpu);
 	tick_cancel_sched_timer(scpu);
 
 	__migrate_hrtimers(scpu, true);
