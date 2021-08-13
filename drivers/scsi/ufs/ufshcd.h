@@ -68,6 +68,8 @@
 
 #include "ufs.h"
 #include "ufshci.h"
+#include "ufs_quirks.h"
+
 #if defined(CONFIG_UFSFEATURE)
 #include "ufsfeature.h"
 #endif
@@ -107,6 +109,19 @@ struct uic_command {
 	int result;
 	struct completion done;
 };
+
+enum ufs_tw_state {
+	UFS_TW_OFF_STATE = 0,		/* turbo write disabled state */
+	UFS_TW_ON_STATE	= 1,		/* turbo write enabled state */
+	UFS_TW_ERR_STATE = 2,		/* turbo write error state */
+};
+
+#define ufshcd_is_tw_off(hba) ((hba)->ufs_tw_state == UFS_TW_OFF_STATE)
+#define ufshcd_is_tw_on(hba) ((hba)->ufs_tw_state == UFS_TW_ON_STATE)
+#define ufshcd_is_tw_err(hba) ((hba)->ufs_tw_state == UFS_TW_ERR_STATE)
+#define ufshcd_set_tw_off(hba) ((hba)->ufs_tw_state = UFS_TW_OFF_STATE)
+#define ufshcd_set_tw_on(hba) ((hba)->ufs_tw_state = UFS_TW_ON_STATE)
+#define ufshcd_set_tw_err(hba) ((hba)->ufs_tw_state = UFS_TW_ERR_STATE)
 
 /* Used to differentiate the power management options */
 enum ufs_pm_op {
@@ -252,6 +267,8 @@ struct ufs_desc_size {
 	int interc_desc;
 	int unit_desc;
 	int conf_desc;
+	int hlth_desc;
+	int str_desc;
 };
 
 /**
@@ -566,12 +583,105 @@ struct ufs_stats {
 	struct ufs_err_reg_hist perf_warn;
 };
 
-/* UFSHCD states */
-enum {
-	UFSHCD_STATE_RESET,
-	UFSHCD_STATE_ERROR,
-	UFSHCD_STATE_OPERATIONAL,
-	UFSHCD_STATE_EH_SCHEDULED,
+#define SEC_UFS_ERROR_COUNT
+
+#if defined(SEC_UFS_ERROR_COUNT)
+struct SEC_UFS_op_count {
+	unsigned int HW_RESET_count;
+#define SEC_UFS_HW_RESET	0xff00
+	unsigned int link_startup_count;
+	unsigned int Hibern8_enter_count;
+	unsigned int Hibern8_exit_count;
+	unsigned int op_err;
+};
+
+struct SEC_UFS_UIC_cmd_count {
+	u8 DME_GET_err;
+	u8 DME_SET_err;
+	u8 DME_PEER_GET_err;
+	u8 DME_PEER_SET_err;
+	u8 DME_POWERON_err;
+	u8 DME_POWEROFF_err;
+	u8 DME_ENABLE_err;
+	u8 DME_RESET_err;
+	u8 DME_END_PT_RST_err;
+	u8 DME_LINK_STARTUP_err;
+	u8 DME_HIBER_ENTER_err;
+	u8 DME_HIBER_EXIT_err;
+	u8 DME_TEST_MODE_err;
+	unsigned int UIC_cmd_err;
+};
+
+struct SEC_UFS_UIC_err_count {
+	u8 PA_ERR_cnt;
+	u8 DL_PA_INIT_ERROR_cnt;
+	u8 DL_NAC_RECEIVED_ERROR_cnt;
+	u8 DL_TC_REPLAY_ERROR_cnt;
+	u8 NL_ERROR_cnt;
+	u8 TL_ERROR_cnt;
+	u8 DME_ERROR_cnt;
+	unsigned int UIC_err;
+};
+
+struct SEC_UFS_Fatal_err_count {
+	u8 DFE;		// Device_Fatal
+	u8 CFE;		// Controller_Fatal
+	u8 SBFE;	// System_Bus_Fatal
+	u8 CEFE;	// Crypto_Engine_Fatal
+	u8 LLE;		// Link Lost
+	unsigned int Fatal_err;
+};
+
+struct SEC_UFS_UTP_count {
+	u8 UTMR_query_task_count;
+	u8 UTMR_abort_task_count;
+	u8 UTR_read_err;
+	u8 UTR_write_err;
+	u8 UTR_sync_cache_err;
+	u8 UTR_unmap_err;
+	u8 UTR_etc_err;
+	unsigned int UTP_err;
+};
+
+struct SEC_UFS_QUERY_count {
+	u8 NOP_err;
+	u8 R_Desc_err;
+	u8 W_Desc_err;
+	u8 R_Attr_err;
+	u8 W_Attr_err;
+	u8 R_Flag_err;
+	u8 Set_Flag_err;
+	u8 Clear_Flag_err;
+	u8 Toggle_Flag_err;
+	unsigned int Query_err;
+};
+
+struct SEC_UFS_counting {
+	struct SEC_UFS_op_count op_count;
+	struct SEC_UFS_UIC_cmd_count UIC_cmd_count;
+	struct SEC_UFS_UIC_err_count UIC_err_count;
+	struct SEC_UFS_Fatal_err_count Fatal_err_count;
+	struct SEC_UFS_UTP_count UTP_count;
+	struct SEC_UFS_QUERY_count query_count;
+};
+#endif
+
+struct SEC_UFS_TW_info {
+	u64 tw_state_ts;
+	u64 tw_enable_ms;
+	u64 tw_disable_ms;
+	u64 tw_amount_W_kb;
+	u64 tw_enable_count;
+	u64 tw_disable_count;
+	u64 tw_setflag_error_count;
+	u64 hibern8_amount_ms;
+	u64 hibern8_enter_count;
+	u64 hibern8_amount_ms_100ms;
+	u64 hibern8_enter_count_100ms;
+	u64 hibern8_max_ms;
+	ktime_t hibern8_enter_ts;
+	struct timespec timestamp;
+	bool tw_info_disable;
 };
 
 /* MTK PATCH UFS Host Controller debug print bitmask */
@@ -691,6 +801,7 @@ struct ufs_hba {
 
 	enum ufs_dev_pwr_mode curr_dev_pwr_mode;
 	enum uic_link_state uic_link_state;
+	enum ufs_tw_state ufs_tw_state;
 	/* Desired UFS power management level during runtime PM */
 	enum ufs_pm_level rpm_lvl;
 	/* Desired UFS power management level during system PM */
@@ -760,12 +871,6 @@ struct ufs_hba {
 	#define UFSHCD_QUIRK_BROKEN_UFS_HCI_VERSION		UFS_BIT(5)
 
 	/*
-	 * This quirk needs to be enabled if we apply performance heuristic
-	 * to UFS host.
-	 */
-	#define UFSHCD_QUIRK_UFS_HCI_PERF_HEURISTIC		UFS_BIT(6)
-
-	/*
 	 * This quirk needs to be enabled if the host contoller regards
 	 * resolution of the values of PRDTO and PRDTL in UTRD as byte.
 	 */
@@ -792,16 +897,11 @@ struct ufs_hba {
 	 */
 	#define UFSHCD_QUIRK_UFS_HCI_DISABLE_AH8_BEFORE_RDB	UFS_BIT(10)
 
-	/*
+    /*
 	 * This quirk needs to be enabled if the host controller advertises
 	 * inline encryption support but it doesn't work correctly.
 	 */
 	#define UFSHCD_QUIRK_BROKEN_CRYPTO			UFS_BIT(11)
-
-	/*
-	 * This quirk needs to be enabled if VCC drop slow
-	 */
-	#define UFSHCD_QUIRK_UFS_VCC_ALWAYS_ON			UFS_BIT(12)
 
 	unsigned int quirks;	/* Deviations from standard UFSHCI spec. */
 
@@ -825,11 +925,9 @@ struct ufs_hba {
 	bool is_powered;
 	bool is_init_prefetch;
 	struct ufs_init_prefetch init_prefetch_data;
-	struct semaphore eh_sem;
 
 	/* Work Queues */
 	struct work_struct eh_work;
-	struct work_struct inv_resp_work;
 	struct work_struct eeh_work;
 	struct work_struct rls_work;
 
@@ -906,6 +1004,22 @@ struct ufs_hba {
 	/* record vendor id for vendor-specific configurations */
 	u32 manu_id;
 
+	struct device_attribute manufacturer_id_attr;
+	struct device_attribute unique_number_attr;
+	char unique_number[UFS_UN_MAX_DIGITS];
+	u8 lifetime;
+	bool support_tw;
+	bool tw_state_not_allowed;
+	u8 wb_dedicated_lu;
+	u8 b_tw_buffer_type;
+	struct mutex tw_ctrl_mutex;
+	struct SEC_UFS_TW_info SEC_tw_info;
+	struct SEC_UFS_TW_info SEC_tw_info_old;
+	unsigned int lc_info;
+#if defined(SEC_UFS_ERROR_COUNT)
+	struct SEC_UFS_counting SEC_err_info;
+#endif
+
 	/* MTK PATCH */
 	struct device_attribute rpm_info_attr;
 	struct device_attribute spm_info_attr;
@@ -959,9 +1073,6 @@ struct ufs_hba {
 	struct keyslot_manager *ksm;
 	void *crypto_DO_NOT_USE[8];
 #endif /* CONFIG_SCSI_UFS_CRYPTO */
-
-	u32 ufs_mtk_qcmd_r_cmd_cnt;
-	u32 ufs_mtk_qcmd_w_cmd_cnt;
 };
 
 /* MTK PATCH */
@@ -1396,6 +1507,11 @@ static inline void ufshcd_vops_dbg_register_dump(struct ufs_hba *hba)
 {
 	if (hba->vops && hba->vops->dbg_register_dump)
 		hba->vops->dbg_register_dump(hba);
+#if defined(CONFIG_SCSI_UFS_TEST_MODE)
+	/* do not recover system if test mode is enabled */
+	BUG();
+#endif
+
 }
 
 static inline void ufshcd_vops_device_reset(struct ufs_hba *hba)
@@ -1405,4 +1521,24 @@ static inline void ufshcd_vops_device_reset(struct ufs_hba *hba)
 		ufshcd_update_reg_hist(&hba->ufs_stats.dev_reset, 0);
 	}
 }
+
+static u8 ufshcd_tw_get_query_index(struct ufs_hba *hba)
+{
+	if (hba->b_tw_buffer_type == WB_BUF_MODE_LU_DEDICATED) {
+		printk("UFS_TEST %s, tw lu: %u\n", __func__, hba->wb_dedicated_lu);
+		return hba->wb_dedicated_lu;
+	}
+
+	return 0;
+}
+
+#define UFS_DEV_ATTR(name, fmt, args...)					\
+static ssize_t ufs_##name##_show (struct device *dev, struct device_attribute *attr, char *buf)	\
+{										\
+	struct Scsi_Host *host = container_of(dev, struct Scsi_Host, shost_dev);\
+	struct ufs_hba *hba = shost_priv(host);                                 \
+	return sprintf(buf, fmt, args);						\
+}										\
+static DEVICE_ATTR(name, S_IRUGO, ufs_##name##_show, NULL)
+
 #endif /* End of Header */
