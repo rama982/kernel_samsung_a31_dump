@@ -135,7 +135,7 @@ void __dynamic_netdev_dbg(struct _ddebug *descriptor,
 		if (unlikely(descriptor.flags & _DPRINTK_FLAGS_PRINT)) \
 			barrier();   \
 		__print_once = true; \
-		__dynamic_pr_emerg(&descriptor, pr_fmt(fmt), \
+		__dynamic_pr_emerg(&descriptor, KLOG_MODNAME pr_fmt(fmt), \
 			##__VA_ARGS__);      \
 	}   else \
 		printk(KERN_EMERG KLOG_MODNAME pr_fmt(fmt), ##__VA_ARGS__); \
@@ -149,7 +149,7 @@ void __dynamic_netdev_dbg(struct _ddebug *descriptor,
 		if (unlikely(descriptor.flags & _DPRINTK_FLAGS_PRINT)) \
 			barrier();   \
 		__print_once = true; \
-		__dynamic_pr_alert(&descriptor, pr_fmt(fmt), \
+		__dynamic_pr_alert(&descriptor, KLOG_MODNAME pr_fmt(fmt), \
 			##__VA_ARGS__);      \
 	}   else \
 		printk(KERN_ALERT KLOG_MODNAME pr_fmt(fmt), ##__VA_ARGS__); \
@@ -163,7 +163,7 @@ void __dynamic_netdev_dbg(struct _ddebug *descriptor,
 		if (unlikely(descriptor.flags & _DPRINTK_FLAGS_PRINT)) \
 			barrier();   \
 		__print_once = true; \
-		__dynamic_pr_crit(&descriptor, pr_fmt(fmt), \
+		__dynamic_pr_crit(&descriptor, KLOG_MODNAME pr_fmt(fmt), \
 			##__VA_ARGS__);      \
 	}   else \
 		printk(KERN_CRIT KLOG_MODNAME pr_fmt(fmt), ##__VA_ARGS__); \
@@ -177,7 +177,7 @@ void __dynamic_netdev_dbg(struct _ddebug *descriptor,
 		if (unlikely(descriptor.flags & _DPRINTK_FLAGS_PRINT)) \
 			barrier();   \
 		__print_once = true; \
-		__dynamic_pr_err(&descriptor, pr_fmt(fmt), \
+		__dynamic_pr_err(&descriptor, KLOG_MODNAME pr_fmt(fmt), \
 			##__VA_ARGS__);      \
 	}   else \
 		printk(KERN_ERR KLOG_MODNAME pr_fmt(fmt), ##__VA_ARGS__); \
@@ -191,7 +191,7 @@ void __dynamic_netdev_dbg(struct _ddebug *descriptor,
 		if (unlikely(descriptor.flags & _DPRINTK_FLAGS_PRINT)) \
 			barrier();   \
 		__print_once = true; \
-		__dynamic_pr_warn(&descriptor, pr_fmt(fmt), \
+		__dynamic_pr_warn(&descriptor, KLOG_MODNAME pr_fmt(fmt), \
 			##__VA_ARGS__);      \
 	}   else \
 		printk(KERN_WARNING KLOG_MODNAME pr_fmt(fmt), ##__VA_ARGS__); \
@@ -205,7 +205,7 @@ void __dynamic_netdev_dbg(struct _ddebug *descriptor,
 		if (unlikely(descriptor.flags & _DPRINTK_FLAGS_PRINT)) \
 			barrier();   \
 		__print_once = true; \
-		__dynamic_pr_notice(&descriptor, pr_fmt(fmt), \
+		__dynamic_pr_notice(&descriptor, KLOG_MODNAME pr_fmt(fmt), \
 			##__VA_ARGS__);      \
 	}   else \
 		printk(KERN_NOTICE KLOG_MODNAME pr_fmt(fmt), ##__VA_ARGS__); \
@@ -219,7 +219,7 @@ void __dynamic_netdev_dbg(struct _ddebug *descriptor,
 		if (unlikely(descriptor.flags & _DPRINTK_FLAGS_PRINT)) \
 			barrier();   \
 		__print_once = true; \
-		__dynamic_pr_info(&descriptor, pr_fmt(fmt), \
+		__dynamic_pr_info(&descriptor, KLOG_MODNAME pr_fmt(fmt), \
 			##__VA_ARGS__);      \
 	}   else \
 		printk(KERN_INFO KLOG_MODNAME pr_fmt(fmt), ##__VA_ARGS__); \
@@ -235,7 +235,7 @@ do {								\
 
 #define dynamic_dev_dbg(dev, fmt, ...)				\
 do {								\
-	DEFINE_DYNAMIC_DEBUG_METADATA(descriptor, fmt);		\
+	DEFINE_DYNAMIC_DEBUG_METADATA(descriptor, fmt);	\
 	if (DYNAMIC_DEBUG_BRANCH(descriptor))			\
 		__dynamic_dev_dbg(&descriptor, dev, fmt,	\
 				  ##__VA_ARGS__);		\

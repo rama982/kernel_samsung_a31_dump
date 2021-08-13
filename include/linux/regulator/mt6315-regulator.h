@@ -19,9 +19,6 @@ enum {
 enum {
 	MT6315_ID_7_VBUCK1 = 0,
 	MT6315_ID_7_VBUCK3,
-#if defined(CONFIG_MACH_MT6893)
-	MT6315_ID_7_VBUCK4,
-#endif
 	MT6315_ID_7_MAX,
 };
 

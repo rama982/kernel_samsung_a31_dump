@@ -92,6 +92,8 @@ static inline int usb_mtkphy_io_write(struct phy *phy,
 
 #endif
 
+extern u32 usb_phy_get_data(struct phy *phy, char *name);
+
 #ifdef CONFIG_MTK_UART_USB_SWITCH
 enum PORT_MODE {
 	PORT_MODE_USB = 0,
