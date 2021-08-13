@@ -1255,4 +1255,10 @@ config TOUCHSCREEN_MTK_TOUCH
 
          To compile this dirver for used touch IC.
 
+source "drivers/input/touchscreen/melfas_mip4/Kconfig"
+source "drivers/input/touchscreen/synaptics/td4150/Kconfig"
+source "drivers/input/touchscreen/ili9881x/Kconfig"
+source "drivers/input/touchscreen/novatek/nt36525/Kconfig"
+source "drivers/input/touchscreen/imagis/ist4050/Kconfig"
+source "drivers/input/touchscreen/zinitix/zt75xx/Kconfig"
 endif

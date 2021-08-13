@@ -40,10 +40,6 @@
 #include <linux/jiffies.h>
 #endif				/* #if NVT_TOUCH_ESD_PROTECT */
 
-#ifdef CONFIG_DRM_MEDIATEK
-#include "mtk_panel_ext.h"
-#endif
-
 #if NVT_TOUCH_ESD_PROTECT
 static struct delayed_work nvt_esd_check_work;
 static struct workqueue_struct *nvt_esd_check_wq;
@@ -53,7 +49,6 @@ uint8_t esd_retry;
 #endif				/* #if NVT_TOUCH_ESD_PROTECT */
 
 struct nvt_ts_data *ts;
-char novatek_firmware[25];
 /* For SPI mode */
 static struct pinctrl *nt36672_pinctrl;
 static struct pinctrl_state *nt36672_spi_mode_default;
@@ -68,9 +63,6 @@ static int nvt_fb_notifier_callback(struct notifier_block *self, unsigned long e
 static void nvt_ts_early_suspend(struct early_suspend *h);
 static void nvt_ts_late_resume(struct early_suspend *h);
 #endif
-
-static int32_t nvt_ts_resume(struct device *dev);
-static int32_t nvt_ts_suspend(struct device *dev);
 
 uint32_t ENG_RST_ADDR = 0x7FFF80;
 uint32_t SWRST_N8_ADDR;	//read from dtsi
@@ -183,20 +175,16 @@ static inline int32_t spi_read_write(struct spi_device *client, uint8_t *buf, si
 		.len = len,
 	};
 
+	memcpy(ts->xbuf, buf, len + DUMMY_BYTES);
+
 	switch (rw) {
 	case NVTREAD:
-		if (len + DUMMY_BYTES > NVT_TRANSFER_LEN + 1)
-			return -EINVAL;
-		memcpy(ts->xbuf, buf, len + DUMMY_BYTES);
 		t.tx_buf = ts->xbuf;
 		t.rx_buf = ts->rbuf;
 		t.len = (len + DUMMY_BYTES);
 		break;
 
 	case NVTWRITE:
-		if (len > NVT_TRANSFER_LEN + 1)
-			return -EINVAL;
-		memcpy(ts->xbuf, buf, len);
 		t.tx_buf = ts->xbuf;
 		break;
 	}
@@ -334,7 +322,7 @@ return:
 *******************************************************/
 void nvt_bld_crc_enable(void)
 {
-	uint8_t buf[4] = { 0 };
+	uint8_t buf[2] = { 0 };
 
 	//---set xdata index to BLD_CRC_EN_ADDR---
 	nvt_set_page(ts->mmap->BLD_CRC_EN_ADDR);
@@ -359,7 +347,7 @@ return:
 *******************************************************/
 void nvt_fw_crc_enable(void)
 {
-	uint8_t buf[4] = { 0 };
+	uint8_t buf[2] = { 0 };
 
 	//---set xdata index to EVENT BUF ADDR---
 	nvt_set_page(ts->mmap->EVENT_BUF_ADDR);
@@ -595,7 +583,7 @@ return:
 *******************************************************/
 int32_t nvt_read_pid(void)
 {
-	uint8_t buf[4] = { 0 };
+	uint8_t buf[3] = { 0 };
 	int32_t ret = 0;
 
 	//---set xdata index to EVENT BUF ADDR---
@@ -1459,28 +1447,6 @@ out:
 	return ret;
 }
 
-#ifdef CONFIG_DRM_MEDIATEK
-static int nvt_tp_power_on_reinit(void)
-{
-	int32_t ret;
-
-	pr_info("%s is called\n", __func__);
-
-	/* do esd recovery, bootloader reset */
-	ret = nvt_ts_suspend(&ts->client->dev);
-	if (ret) {
-		pr_info("%s  is called suspend %d\n", __func__, ret);
-		return ret;
-	}
-
-	ret = nvt_ts_resume(&ts->client->dev);
-	if (ret)
-		pr_info("%s  is called resume %d\n", __func__, ret);
-
-	return ret;
-}
-#endif
-
 /*******************************************************
 Description:
 	Novatek touchscreen driver probe function.
@@ -1488,29 +1454,11 @@ Description:
 return:
 	Executive outcomes. 0---succeed. negative---failed
 *******************************************************/
-struct tag_videolfb {
-	u64 fb_base;
-	u32 islcmfound;
-	u32 fps;
-	u32 vram;
-	char lcmname[1];
-};
-
 static int32_t nvt_ts_probe(struct spi_device *client)
 {
 	int32_t ret = 0;
-	struct device_node *lcm_name;
-	struct tag_videolfb *videolfb_tag = NULL;
-	unsigned long size = 0;
-	char firmware_name_jdi[] = "novatek_ts_fw_jdi.bin";
-	char firmware_name_tm[] = "novatek_ts_fw_tm.bin";
-	char firmware_name[] = "novatek_ts_fw.bin";
 #if ((TOUCH_KEY_NUM > 0) || WAKEUP_GESTURE)
 	int32_t retry = 0;
-#endif
-
-#ifdef CONFIG_DRM_MEDIATEK
-	void **retval = NULL;
 #endif
 
 	NVT_LOG("start\n");
@@ -1521,7 +1469,7 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 		return -ENOMEM;
 	}
 
-	ts->xbuf = kzalloc((NVT_TRANSFER_LEN + 1), GFP_KERNEL);
+	ts->xbuf = (uint8_t *) kzalloc((NVT_TRANSFER_LEN + 1), GFP_KERNEL);
 	if (ts->xbuf == NULL) {
 		NVT_ERR("kzalloc for xbuf failed!\n");
 		if (ts) {
@@ -1707,36 +1655,6 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 #endif
 
 #if BOOT_UPDATE_FIRMWARE
-	NVT_LOG("start to parse lcm name\n");
-	lcm_name = of_find_node_by_path("/chosen");
-	if (lcm_name) {
-		videolfb_tag = (struct tag_videolfb *)
-			of_get_property(lcm_name,
-			"atag,videolfb",
-			(int *)&size);
-		if (!videolfb_tag)
-			NVT_ERR("Invalid lcm name\n");
-			NVT_LOG("read lcm name : %s\n", videolfb_tag->lcmname);
-		if (strcmp("nt36672c_fhdp_dsi_vdo_auo_cphy_90hz_jdi_lcm_drv",
-			videolfb_tag->lcmname) == 0 ||
-			strcmp("nt36672c_fhdp_dsi_vdo_auo_cphy_90hz_jdi_hfp_lcm_drv",
-			videolfb_tag->lcmname) == 0)
-			strncpy(novatek_firmware, firmware_name_jdi, sizeof(firmware_name_jdi));
-		else if (strcmp("nt36672c_fhdp_dsi_vdo_auo_cphy_90hz_tianma_lcm_drv",
-			videolfb_tag->lcmname) == 0)
-			strncpy(novatek_firmware, firmware_name_tm, sizeof(firmware_name_tm));
-		else if (strcmp("nt36672c_fhdp_dsi_vdo_120hz_shenchao_lcm_drv",
-			videolfb_tag->lcmname) == 0 ||
-			strcmp("nt36672c_fhdp_dsi_vdo_90hz_shenchao_lcm_drv",
-			videolfb_tag->lcmname) == 0 ||
-			strcmp("nt36672c_fhdp_dsi_vdo_60hz_shenchao_lcm_drv",
-			videolfb_tag->lcmname) == 0)
-			strncpy(novatek_firmware, firmware_name, sizeof(firmware_name));
-		else
-			strncpy(novatek_firmware, firmware_name, sizeof(firmware_name));
-		NVT_LOG("nt36672c touch fw name : %s", BOOT_UPDATE_FIRMWARE_NAME);
-	} else
-		NVT_ERR("Can't find node: chose in dts");
 	nvt_fwu_wq = alloc_workqueue("nvt_fwu_wq", WQ_UNBOUND | WQ_MEM_RECLAIM, 1);
 	if (!nvt_fwu_wq) {
 		NVT_ERR("nvt_fwu_wq create workqueue failed\n");
@@ -1815,14 +1733,6 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 
 	bTouchIsAwake = 1;
 	NVT_LOG("end\n");
-
-#ifdef CONFIG_DRM_MEDIATEK
-	pr_info("%s, disp notifier register func!\n", __func__);
-	if (mtk_panel_tch_handle_init()) {
-		retval = mtk_panel_tch_handle_init();
-		*retval = (void *)nvt_tp_power_on_reinit;
-	}
-#endif
 
 	nvt_irq_enable(true);
 
