@@ -285,7 +285,11 @@ static void __init arm_initrd_init(void)
 void __init arm_memblock_init(const struct machine_desc *mdesc)
 {
 	/* Register the kernel text, kernel data and initrd with memblock. */
+	set_memsize_kernel_type(MEMSIZE_KERNEL_KERNEL);
 	memblock_reserve(__pa(KERNEL_START), KERNEL_END - KERNEL_START);
+	set_memsize_kernel_type(MEMSIZE_KERNEL_STOP);
+	record_memsize_reserved("initmem", __pa(__init_begin),
+				__init_end - __init_begin, false, false);
 
 	arm_initrd_init();
 
