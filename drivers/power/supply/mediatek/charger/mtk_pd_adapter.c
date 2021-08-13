@@ -48,6 +48,7 @@
 
 
 #include "mtk_charger_intf.h"
+#include <tcpci_config.h>
 
 /* PD */
 #include <tcpm.h>
@@ -118,6 +119,9 @@ static int pd_tcp_notifier_call(struct notifier_block *pnb,
 				MTK_TYPEC_HRESET_STATUS,
 				&pinfo->enable_kpoc_shdn);
 		} else if (noti->hreset_state.state == TCP_HRESET_SIGNAL_SEND ||
+#ifdef CONFIG_KPOC_GET_SOURCE_CAP_TRY
+			noti->hreset_state.state == TCP_ERROR_RECOVERY_KPOC ||
+#endif /*CONFIG_KPOC_GET_SOURCE_CAP_TRY*/
 			noti->hreset_state.state == TCP_HRESET_SIGNAL_RECV) {
 			pinfo->enable_kpoc_shdn = false;
 			notify_adapter_event(MTK_PD_ADAPTER,
@@ -343,7 +347,8 @@ static int pd_get_cap(struct adapter_device *dev,
 					tacap->type[i] = MTK_PD_APDO;
 				else
 					tacap->type[i] = MTK_CAP_TYPE_UNKNOWN;
-				tacap->type[i] = pd_cap.type[i];
+				/* Code bug */
+				/* tacap->type[i] = pd_cap.type[i]; */
 
 				chr_err("[%s]:%d mv:[%d,%d] %d max:%d min:%d type:%d %d\n",
 					__func__, i, tacap->min_mv[i],

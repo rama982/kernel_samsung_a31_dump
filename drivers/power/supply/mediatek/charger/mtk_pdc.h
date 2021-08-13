@@ -39,6 +39,13 @@ struct pdc_data {
 	int pd_vbus_upper_bound;
 	int ibus_err;
 	int vsys_watt;
+	int pd_list_select;
+	int apdo_num;
+	int fpdo_num;
+	int unknown_num;
+	int prev_available_pdo;
+	int was_hard_rst;
+	int ps_rdy;
 };
 
 struct pdc {
@@ -71,10 +78,19 @@ extern int pdc_init(void);
 extern bool pdc_is_enable(void);
 extern bool pdc_is_connect(void);
 extern bool pdc_is_ready(void);
+extern int pdc_clear(void);
+extern int pdc_hard_rst(void);
 extern int pdc_reset(void);
 extern int pdc_stop(void);
 extern int pdc_run(void);
 extern int pdc_set_data(struct pdc_data data);
 extern struct pdc_data *pdc_get_data(void);
-
+#if defined(CONFIG_BATTERY_SAMSUNG)
+extern struct pdic_notifier_struct pd_noti;
+#ifdef CONFIG_USB_TYPEC_MANAGER_NOTIFIER
+extern void select_pdo(int num);
+extern void (*fp_select_pdo)(int num);
+#endif
+#endif
+int pdc_get_setting(void);
 #endif /* __MTK_PDC_H */

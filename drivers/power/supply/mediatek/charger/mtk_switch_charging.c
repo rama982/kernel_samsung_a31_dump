@@ -65,7 +65,7 @@
 /* #include <musb_core.h> */ /* FIXME */
 #include "mtk_charger_intf.h"
 #include "mtk_switch_charging.h"
-
+#if 0
 static int _uA_to_mA(int uA)
 {
 	if (uA == -1)
@@ -147,15 +147,10 @@ static void swchg_select_charging_current_limit(struct charger_manager *info)
 	}
 
 	if (info->usb_unlimited) {
-		if (pdata->input_current_limit_by_aicl != -1) {
-			pdata->input_current_limit =
-				pdata->input_current_limit_by_aicl;
-		} else {
-			pdata->input_current_limit =
-				info->data.usb_unlimited_current;
-		}
+		pdata->input_current_limit =
+					info->data.ac_charger_input_current;
 		pdata->charging_current_limit =
-			info->data.ac_charger_current;
+					info->data.ac_charger_current;
 		goto done;
 	}
 
@@ -429,7 +424,7 @@ static void swchg_turn_on_charging(struct charger_manager *info)
 
 	charger_dev_enable(info->chg1_dev, charging_enable);
 }
-
+#endif
 static int mtk_switch_charging_plug_in(struct charger_manager *info)
 {
 	struct switch_charging_alg_data *swchgalg = info->algorithm_data;
@@ -460,6 +455,7 @@ static int mtk_switch_charging_plug_out(struct charger_manager *info)
 static int mtk_switch_charging_do_charging(struct charger_manager *info,
 						bool en)
 {
+#if 0
 	struct switch_charging_alg_data *swchgalg = info->algorithm_data;
 
 	chr_err("%s: en:%d %s\n", __func__, en, info->algorithm_name);
@@ -477,10 +473,11 @@ static int mtk_switch_charging_do_charging(struct charger_manager *info,
 		swchgalg->state = CHR_ERROR;
 		charger_manager_notifier(info, CHARGER_NOTIFY_ERROR);
 	}
+#endif
 
 	return 0;
 }
-
+#if 0
 static int mtk_switch_chr_pe40_init(struct charger_manager *info)
 {
 	swchg_turn_on_charging(info);
@@ -671,15 +668,19 @@ int mtk_switch_chr_full(struct charger_manager *info)
 
 	return 0;
 }
+#endif
 
 static int mtk_switch_charging_current(struct charger_manager *info)
 {
+#if 0
 	swchg_select_charging_current_limit(info);
+#endif
 	return 0;
 }
 
 static int mtk_switch_charging_run(struct charger_manager *info)
 {
+/*
 	struct switch_charging_alg_data *swchgalg = info->algorithm_data;
 	int ret = 0;
 
@@ -734,13 +735,14 @@ static int mtk_switch_charging_run(struct charger_manager *info)
 		}
 	} while (ret != 0);
 	mtk_switch_check_charging_time(info);
-
+*/
 	charger_dev_dump_registers(info->chg1_dev);
 	return 0;
 }
 
 int charger_dev_event(struct notifier_block *nb, unsigned long event, void *v)
 {
+#if 0
 	struct charger_manager *info =
 			container_of(nb, struct charger_manager, chg1_nb);
 	struct chgdev_notify *data = v;
@@ -774,7 +776,7 @@ int charger_dev_event(struct notifier_block *nb, unsigned long event, void *v)
 
 	if (info->chg1_dev->is_polling_mode == false)
 		_wake_up_charger(info);
-
+#endif
 	return NOTIFY_DONE;
 }
 
