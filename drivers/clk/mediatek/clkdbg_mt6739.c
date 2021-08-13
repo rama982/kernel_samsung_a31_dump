@@ -152,11 +152,13 @@ static void __init init_regbase(void)
 
 #define ABS_DIFF(a, b)	((a) > (b) ? (a) - (b) : (b) - (a))
 
+#if 0
 enum FMETER_TYPE {
 	FT_NULL,
 	ABIST,
 	CKGEN
 };
+#endif
 
 #define FMCLK(_t, _i, _n) { .type = _t, .id = _i, .name = _n }
 

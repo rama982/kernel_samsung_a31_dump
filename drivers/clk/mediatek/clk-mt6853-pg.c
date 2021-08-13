@@ -798,10 +798,6 @@ static void ram_console_update(void)
 			if (DBG_ID >= (DBG_ID_NUM / 2))
 				id = DBG_ID - (DBG_ID_NUM / 2);
 			/* dump only when power off failes */
-			if (id == SYS_MFG0 || id == SYS_MFG1
-			|| id == SYS_MFG2 || id == SYS_MFG3
-			|| id == SYS_MFG5)
-				print_subsys_reg(mfgsys);
 
 			if (id == SYS_AUDIO) {
 				print_subsys_reg(audio);
@@ -3718,7 +3714,9 @@ static int MFG0_sys_disable_op(struct subsys *sys)
 static int MFG1_sys_prepare_op(struct subsys *sys)
 {
 	/*pr_debug("[CCF] %s\r\n", __func__); */
-	return spm_mtcmos_ctrl_mfg1_bus_prot(STA_POWER_ON);
+	return 0;
+	/* return spm_mtcmos_ctrl_mfg1_bus_prot(STA_POWER_ON);
+	MFG bus protect refine control to gpufreq */
 }
 
 static int MFG1_sys_enable_op(struct subsys *sys)
@@ -3730,7 +3728,9 @@ static int MFG1_sys_enable_op(struct subsys *sys)
 static int MFG1_sys_unprepare_op(struct subsys *sys)
 {
 	/*pr_debug("[CCF] %s\r\n", __func__); */
-	return spm_mtcmos_ctrl_mfg1_bus_prot(STA_POWER_DOWN);
+	return 0;
+	/* return spm_mtcmos_ctrl_mfg1_bus_prot(STA_POWER_DOWN);
+	MFG bus protect refine control to gpufreq */
 }
 
 static int MFG1_sys_disable_op(struct subsys *sys)

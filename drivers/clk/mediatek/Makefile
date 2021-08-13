@@ -15,25 +15,6 @@ obj-$(CONFIG_COMMON_CLK_MT6785) += clk-mt6785.o clk-mt6785-pg.o clk-mtk-v1.o clk
 obj-$(CONFIG_COMMON_CLK_MT6873) += clk-mt6873.o clk-mt6873-pg.o clk-mtk-v1.o clkdbg.o clkdbg-mt6873.o clkchk.o clkchk-mt6873.o clk-fmeter-mt6873.o
 obj-$(CONFIG_COMMON_CLK_MT6885) += clk-mt6885.o clk-mt6885-pg.o clk-mtk-v1.o clkdbg.o clkdbg-mt6885.o clkchk.o clkchk-mt6885.o clk-fmeter-mt6885.o
 obj-$(CONFIG_COMMON_CLK_MT6893) += clk-mt6885.o clk-mt6885-pg.o clk-mtk-v1.o clkdbg.o clkdbg-mt6885.o clkchk.o clkchk-mt6885.o clk-fmeter-mt6885.o
-obj-$(CONFIG_COMMON_CLK_MT6833) += clk-mt6833.o clk-mt6833-pg.o clk-mtk-v1.o clkdbg.o clkdbg-mt6833.o clkchk.o clkchk-mt6833.o clk-bringup.o  clk-fmeter-mt6833.o
-obj-$(CONFIG_COMMON_CLK_MT6833_AUDIO) += clk-mt6833-audsys.o
-obj-$(CONFIG_COMMON_CLK_MT6833_CAMSYS_MAIN) += clk-mt6833-cam_m.o
-obj-$(CONFIG_COMMON_CLK_MT6833_CAMSYS_RAWA) += clk-mt6833-cam_ra.o
-obj-$(CONFIG_COMMON_CLK_MT6833_CAMSYS_RAWB) += clk-mt6833-cam_rb.o
-obj-$(CONFIG_COMMON_CLK_MT6833_IMGSYS1) += clk-mt6833-imgsys1.o
-obj-$(CONFIG_COMMON_CLK_MT6833_IMGSYS2) += clk-mt6833-imgsys2.o
-obj-$(CONFIG_COMMON_CLK_MT6833_IMP_IIC_WRAP_C) += clk-mt6833-impc.o
-obj-$(CONFIG_COMMON_CLK_MT6833_IMP_IIC_WRAP_E) += clk-mt6833-impe.o
-obj-$(CONFIG_COMMON_CLK_MT6833_IMP_IIC_WRAP_N) += clk-mt6833-impn.o
-obj-$(CONFIG_COMMON_CLK_MT6833_IMP_IIC_WRAP_S) += clk-mt6833-imps.o
-obj-$(CONFIG_COMMON_CLK_MT6833_IMP_IIC_WRAP_W) += clk-mt6833-impw.o
-obj-$(CONFIG_COMMON_CLK_MT6833_IMP_IIC_WRAP_WS) += clk-mt6833-impws.o
-obj-$(CONFIG_COMMON_CLK_MT6833_IPESYS) += clk-mt6833-ipe.o
-obj-$(CONFIG_COMMON_CLK_MT6833_MDPSYS_CONFIG) += clk-mt6833-mdp.o
-obj-$(CONFIG_COMMON_CLK_MT6833_MFGSYS) += clk-mt6833-mfgcfg.o
-obj-$(CONFIG_COMMON_CLK_MT6833_MMSYS_CONFIG) += clk-mt6833-mm.o
-obj-$(CONFIG_COMMON_CLK_MT6833_VDEC_GCON) += clk-mt6833-vdec.o
-obj-$(CONFIG_COMMON_CLK_MT6833_VENC_GCON) += clk-mt6833-venc.o
 endif
 obj-$(CONFIG_COMMON_CLK_MT6797) += clk-mt6797.o
 obj-$(CONFIG_COMMON_CLK_MT6797_IMGSYS) += clk-mt6797-img.o
@@ -72,7 +53,7 @@ obj-$(CONFIG_COMMON_CLK_MT8183_MFGCFG) += clk-mt8183-mfgcfg.o
 obj-$(CONFIG_COMMON_CLK_MT8183_MMSYS) += clk-mt8183-mm.o
 obj-$(CONFIG_COMMON_CLK_MT8183_VDECSYS) += clk-mt8183-vdec.o
 obj-$(CONFIG_COMMON_CLK_MT8183_VENCSYS) += clk-mt8183-venc.o
-obj-$(CONFIG_COMMON_CLK_MT6739) += clk-mt6739.o clk-mt6739-pg.o mt6739_clkmgr.o clk-mtk-v1.o clk-fixed-factor.o
+obj-$(CONFIG_COMMON_CLK_MT6739) += clk-mt6739.o clk-mt6739-pg.o mt6739_clkmgr.o clk-mtk-v1.o clk-fixed-factor.o  clkdbg.o
 obj-$(CONFIG_COMMON_CLK_MT6853) += clk-mt6853.o clk-mt6853-pg.o clk-mtk-v1.o clkdbg.o clkdbg-mt6853.o clkchk.o clkchk-mt6853.o clk-bringup.o  clk-fmeter-mt6853.o
 obj-$(CONFIG_COMMON_CLK_MT6853_APU0) += clk-mt6853-apu0.o
 obj-$(CONFIG_COMMON_CLK_MT6853_APU1) += clk-mt6853-apu1.o
@@ -99,6 +80,7 @@ obj-$(CONFIG_COMMON_CLK_MT6853_VDEC_GCON) += clk-mt6853-vdec.o
 obj-$(CONFIG_COMMON_CLK_MT6853_VENC_GCON) += clk-mt6853-venc.o
 
 ifeq ($(CONFIG_DEBUG_FS), y)
+obj-$(CONFIG_COMMON_CLK_MT6739) += clkdbg_mt6739.o
 obj-$(CONFIG_COMMON_CLK_MT6768) +=  clkchk-mt6768.o clkdbg-mt6768.o mt6768_clkmgr.o
 obj-$(CONFIG_COMMON_CLK_MT6765) += clkdbg_mt6765.o clkchk-mt6765.o
 endif
