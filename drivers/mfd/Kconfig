@@ -1174,6 +1174,16 @@ config AB8500_GPADC
 	help
 	  AB8500 GPADC driver used to convert Acc and battery/ac/usb voltage
 
+config MFD_S2MU005
+	bool "SAMSUNG Electronics IF PMIC S2MU005 Series Support"
+	depends on I2C=y
+	select MFD_CORE
+	  help
+	  Support for the Samsung Electronics MFD series.
+	  This driver provides common support for accessing the device,
+	  additional drivers must be enabled in order to use the functionality
+	  of the device
+
 config MFD_DB8500_PRCMU
 	bool "ST-Ericsson DB8500 Power Reset Control Management Unit"
 	depends on UX500_SOC_DB8500

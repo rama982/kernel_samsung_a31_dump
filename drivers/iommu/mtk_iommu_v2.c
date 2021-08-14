@@ -205,9 +205,6 @@ static unsigned int mtk_iommu_get_domain_id(
 
 int mtk_iommu_get_port_id(struct device *dev)
 {
-	struct iommu_fwspec *fwspec;
-	unsigned int larbid, portid, domain_id = 0;
-
 	if (!dev)
 		return -ENODEV;
 
@@ -1678,7 +1675,6 @@ irqreturn_t MTK_M4U_isr_sec(int irq, void *dev_id)
 
 	ret = IRQ_HANDLED;
 
-out:
 	spin_lock_irqsave(&data->reg_lock, flags);
 	data->isr_ref--;
 	spin_unlock_irqrestore(&data->reg_lock, flags);
@@ -2589,7 +2585,6 @@ int mtk_iommu_get_iova_space(struct device *dev,
 		unsigned long *base, unsigned long *max,
 		int *owner, struct list_head *list)
 {
-	int ret;
 	struct mtk_iommu_domain *dom;
 	struct mtk_iommu_pgtable *pgtable = mtk_iommu_get_pgtable(NULL, 0);
 	unsigned long flags = 0;
@@ -2605,13 +2600,7 @@ int mtk_iommu_get_iova_space(struct device *dev,
 
 	if (pgtable)
 		spin_lock_irqsave(&pgtable->pgtlock, flags);
-	ret = iommu_dma_get_iovad_info(dev, base, max);
-	if (ret) {
-		pr_info("%s, get_iovad_info fail, dev:%s\n",
-			__func__, dev_name(dev));
-		*base = 0;
-		*max = 0;
-	}
+	iommu_dma_get_iovad_info(dev, base, max);
 	if (pgtable)
 		spin_unlock_irqrestore(&pgtable->pgtlock, flags);
 

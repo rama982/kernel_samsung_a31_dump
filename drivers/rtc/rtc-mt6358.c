@@ -145,6 +145,7 @@
 #define RTC_PDN2_PWRON_LOGO		BIT(15)
 #define RTC_PDN2_PWRON_ALARM	BIT(4)
 
+#define RTC_SPAR0_BATT_REMOVAL  BIT(15)
 
 static u16 rtc_alarm_reg[RTC_OFFSET_COUNT][3] = {
 	{RTC_AL_SEC, RTC_AL_SEC_MASK, 0},
@@ -619,7 +620,7 @@ void mtk_rtc_lp_exception(void)
 	rtc_read(RTC_PROT, &prot);
 	rtc_read(RTC_CON, &con);
 	rtc_read(RTC_TC_SEC, &sec1);
-	mdelay(2000);
+	msleep(2000);
 	rtc_read(RTC_TC_SEC, &sec2);
 
 	pr_emerg("!!! 32K WAS STOPPED !!!\n"
@@ -993,6 +994,45 @@ static const struct rtc_class_ops rtc_ops = {
 	.set_alarm = rtc_ops_set_alarm,
 };
 
+#ifdef CONFIG_SEC_PM
+static int poff_status;
+
+static void rtc_reset_check(struct platform_device *pdev)
+{
+	unsigned long flags;
+	u32 spar0 = 0;
+	struct mt6358_rtc *rtc = platform_get_drvdata(pdev);
+
+	rtc_read(RTC_SPAR0, &spar0);
+	if(!(spar0 & RTC_SPAR0_BATT_REMOVAL)) {
+		poff_status = 1;
+		pr_info("%s BATTERY REMOVED\n", __func__);
+
+		spin_lock_irqsave(&rtc->lock, flags);
+		rtc_update_bits(RTC_SPAR0, RTC_SPAR0_BATT_REMOVAL, RTC_SPAR0_BATT_REMOVAL);
+		rtc_write_trigger();
+		spin_unlock_irqrestore(&rtc->lock, flags);
+	}
+}
+
+static ssize_t rtc_status_show(struct kobject *kobj,
+				  struct kobj_attribute *attr, char *buf)
+{
+	int status = poff_status;
+	pr_info("complete power off status(%d)\n", status);
+	poff_status = 0;
+	return sprintf(buf, "%d\n", status);
+}
+
+static struct kobj_attribute rtc_status_attr = {
+	.attr = {
+		.name = __stringify(rtc_status),
+		.mode = S_IRUGO,
+	},
+	.show = rtc_status_show,
+};
+#endif
+
 static void mtk_rtc_set_lp_irq(void)
 {
 	unsigned int irqen = 0;
@@ -1092,6 +1132,15 @@ static int mtk_rtc_pdrv_probe(struct platform_device *pdev)
 	else
 		rtc_pm_notifier_registered = true;
 #endif /* CONFIG_PM */
+
+#ifdef CONFIG_SEC_PM
+	rtc_reset_check(pdev);
+	if(power_kobj) {
+		ret = sysfs_create_file(power_kobj, &rtc_status_attr.attr);
+		if (ret)
+			pr_err("%s: failed %d\n", __func__, ret);
+	}
+#endif
 
 	INIT_WORK(&rtc->work, mtk_rtc_work_queue);
 

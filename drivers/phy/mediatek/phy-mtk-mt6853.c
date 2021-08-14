@@ -120,9 +120,6 @@ static void phy_advance_settings(struct mtk_phy_instance *instance)
 	u3phywrite32(
 		U3D_USBPHYACR2, 11, (0x3<<11), 0x3);
 
-	u3phywrite32(U3D_USBPHYACR6, RG_USB20_SQTH_OFST,
-		RG_USB20_SQTH, 0x2);
-
 	u3phywrite32(U3D_USBPHYACR6, (28),
 		(0x1<<28), 0x1);
 
@@ -403,54 +400,20 @@ reg_done:
 	usb_enable_clock(phy_drv, false);
 }
 
-#define VAL_MAX_WIDTH_2	0x3
-#define VAL_MAX_WIDTH_3	0x7
 static void usb_phy_tuning(struct mtk_phy_instance *instance)
 {
-	s32 u2_vrt_ref, u2_term_ref, u2_enhance;
-	struct device_node *of_node;
+	struct mtk_phy_tuning *pdata, *data;
+	int i = 0;
 
-	if (!instance->phy_tuning.inited) {
-		instance->phy_tuning.u2_vrt_ref = 6;
-		instance->phy_tuning.u2_term_ref = 6;
-		instance->phy_tuning.u2_enhance = 1;
-		of_node = of_find_compatible_node(NULL, NULL,
-			instance->phycfg->tuning_node_name);
-		if (of_node) {
-			/* value won't be updated if property not being found */
-			of_property_read_u32(of_node, "u2_vrt_ref",
-				(u32 *) &instance->phy_tuning.u2_vrt_ref);
-			of_property_read_u32(of_node, "u2_term_ref",
-				(u32 *) &instance->phy_tuning.u2_term_ref);
-			of_property_read_u32(of_node, "u2_enhance",
-				(u32 *) &instance->phy_tuning.u2_enhance);
-		}
-		instance->phy_tuning.inited = true;
-	}
-	u2_vrt_ref = instance->phy_tuning.u2_vrt_ref;
-	u2_term_ref = instance->phy_tuning.u2_term_ref;
-	u2_enhance = instance->phy_tuning.u2_enhance;
+	pdata = instance->phy_tuning;
+	for (i = 0; i < instance->phy_data_cnt; i++) {
+		data = &pdata[i];
+		u3phywrite32(SSUSB_SIFSLV_U2PHY_COM_BASE + data->offset,
+			data->shift, data->mask << data->shift,
+			data->value);
 
-	if (u2_vrt_ref != -1) {
-		if (u2_vrt_ref <= VAL_MAX_WIDTH_3) {
-			u3phywrite32(U3D_USBPHYACR1,
-				RG_USB20_VRT_VREF_SEL_OFST,
-				RG_USB20_VRT_VREF_SEL, u2_vrt_ref);
-		}
-	}
-	if (u2_term_ref != -1) {
-		if (u2_term_ref <= VAL_MAX_WIDTH_3) {
-			u3phywrite32(U3D_USBPHYACR1,
-				RG_USB20_TERM_VREF_SEL_OFST,
-				RG_USB20_TERM_VREF_SEL, u2_term_ref);
-		}
-	}
-	if (u2_enhance != -1) {
-		if (u2_enhance <= VAL_MAX_WIDTH_2) {
-			u3phywrite32(U3D_USBPHYACR6,
-				RG_USB20_PHY_REV_6_OFST,
-				RG_USB20_PHY_REV_6, u2_enhance);
-		}
+		pr_info("%s, %s device 0x%x\n",
+			__func__, data->name, data->value);
 	}
 
 	phy_printk(K_INFO, "%s - SSUSB TX EYE Tuning\n", __func__);
@@ -464,7 +427,6 @@ static void usb_phy_tuning(struct mtk_phy_instance *instance)
 	u3phywrite32(U3D_PHYD_MIX6, RG_SSUSB_FORCE_IDEMSEL_OFST,
 		RG_SSUSB_FORCE_IDEMSEL, 1);
 }
-
 
 static void phy_recover(struct mtk_phy_instance *instance)
 {
@@ -536,9 +498,6 @@ static void phy_recover(struct mtk_phy_instance *instance)
 
 	phy_efuse_settings(instance);
 
-	u3phywrite32(U3D_USBPHYACR6, RG_USB20_DISCTH_OFST,
-		RG_USB20_DISCTH, 0x7);
-
 	usb_phy_tuning(instance);
 	phy_advance_settings(instance);
 
@@ -551,7 +510,6 @@ static void phy_recover(struct mtk_phy_instance *instance)
 static int charger_detect_init(struct mtk_phy_instance *instance)
 {
 	struct mtk_phy_drv *phy_drv = instance->phy_drv;
-
 
 	phy_printk(K_INFO, "%s+\n", __func__);
 
@@ -644,7 +602,24 @@ static int phy_lpm_enable(struct mtk_phy_instance  *instance, bool on)
 
 static int phy_host_mode(struct mtk_phy_instance  *instance, bool on)
 {
+	struct mtk_phy_tuning *pdata, *data;
+	int i = 0;
+
 	phy_printk(K_DEBUG, "%s+ = %d\n", __func__, on);
+
+	if (!on)
+		return 0;
+
+	pdata = instance->phy_tuning;
+	for (i = 0; i < instance->phy_data_cnt; i++) {
+		data = &pdata[i];
+		u3phywrite32(SSUSB_SIFSLV_U2PHY_COM_BASE + data->offset,
+			data->shift, data->mask << data->shift,
+			data->host);
+
+		pr_info("%s, %s host 0x%x\n",
+			__func__, data->name, data->host);
+	}
 
 	return 0;
 }

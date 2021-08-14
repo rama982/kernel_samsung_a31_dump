@@ -56,19 +56,21 @@ static inline u16 _i2c_readw(struct mt_i2c *i2c, u16 offset)
 
 #define raw_i2c_writew(val, i2c, ch_ofs, ofs) \
 	do { \
-		if (((i2c)->dev_comp->ver == 0x2) && (V2_##ofs != 0xfff)) \
-			_i2c_writew(val, i2c, ch_ofs + (V2_##ofs)); \
-		else if (((i2c)->dev_comp->ver == 0x1) && (ofs != 0xfff)) \
-			_i2c_writew(val, i2c, ch_ofs + ofs); \
+		if (((i2c)->dev_comp->ver != 0x2 && (ofs != 0xfff)) || \
+		    (((i2c)->dev_comp->ver == 0x2) && (V2_##ofs != 0xfff))) \
+			_i2c_writew(val, i2c, ch_ofs + \
+				    (((i2c)->dev_comp->ver == 0x2) ? \
+				    (V2_##ofs) : ofs)); \
 	} while (0)
 
 #define raw_i2c_readw(i2c, ch_ofs, ofs) \
 	({ \
 		u16 value = 0; \
-		if (((i2c)->dev_comp->ver == 0x2) && (V2_##ofs != 0xfff)) \
-			value = _i2c_readw(i2c, ch_ofs + (V2_##ofs)); \
-		else if (((i2c)->dev_comp->ver == 0x1) && (ofs != 0xfff)) \
-			value = _i2c_readw(i2c, ch_ofs + ofs); \
+		if (((i2c)->dev_comp->ver != 0x2 && (ofs != 0xfff)) || \
+		    (((i2c)->dev_comp->ver == 0x2) && (V2_##ofs != 0xfff))) \
+			value = _i2c_readw(i2c, ch_ofs + \
+					   (((i2c)->dev_comp->ver == 0x2) ? \
+					   (V2_##ofs) : ofs)); \
 		value; \
 	})
 
@@ -2020,6 +2022,71 @@ static s32 enable_arbitration(void)
 	}
 	/* Enable the I2C arbitration */
 	writew(0x3, pericfg_base + OFFSET_PERI_I2C_MODE_ENABLE);
+	return 0;
+}
+#endif
+
+#ifdef CONFIG_SAMSUNG_TUI
+#ifdef CONFIG_PM_RUNTIME
+static int stui_pm_ret;
+#endif /* CONFIG_PM_RUNTIME */
+int stui_i2c_lock(struct i2c_adapter *adap)
+{
+	int ret = 0;
+	static struct mt_i2c *stui_i2c;
+
+	if (!adap) {
+		pr_err("cannot get adapter\n");
+		return -1;
+	}
+
+	i2c_lock_bus(adap, I2C_LOCK_ROOT_ADAPTER);
+	stui_i2c = i2c_get_adapdata(adap);
+
+#ifdef CONFIG_PM_RUNTIME
+	stui_pm_ret = pm_runtime_get_sync(stui_i2c->dev);
+	if (stui_pm_ret < 0) {
+		ret = mt_i2c_clock_enable(stui_i2c);
+		if (ret)
+			goto out_err;
+	}
+#else /* CONFIG_PM_RUNTIME */
+	ret = mt_i2c_clock_enable(stui_i2c);
+	if (ret)
+		goto out_err;
+#endif /* CONFIG_PM_RUNTIME */
+
+	return 0;
+
+out_err:
+	i2c_unlock_bus(adap, I2C_LOCK_ROOT_ADAPTER);
+	return ret;
+}
+
+int stui_i2c_unlock(struct i2c_adapter *adap)
+{
+	static struct mt_i2c *stui_i2c;
+
+	if (!adap) {
+		pr_err("cannot get adapter\n");
+		return -1;
+	}
+
+	stui_i2c = i2c_get_adapdata(adap);
+
+#ifdef CONFIG_PM_RUNTIME
+	if (stui_pm_ret < 0) {
+		mt_i2c_clock_disable(stui_i2c);
+	} else {
+		pm_runtime_mark_last_busy(stui_i2c->dev);
+		pm_runtime_put_autosuspend(stui_i2c->dev);
+	}
+#else /* CONFIG_PM_RUNTIME */
+	mt_i2c_clock_disable(stui_i2c);
+#endif /* CONFIG_PM_RUNTIME */
+
+	i2c_unlock_bus(adap, I2C_LOCK_ROOT_ADAPTER);
+
 	return 0;
 }
 #endif

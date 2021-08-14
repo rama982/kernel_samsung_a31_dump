@@ -337,7 +337,6 @@ static irqreturn_t emimpu_violation_irq(int irq, void *dev_id)
 				mtk_clear_md_violation();
 				continue;
 			}
-
 		mpu_bypass = false;
 		list_for_each_entry_reverse(mpucb, &mpucb_list, list) {
 			if (mpucb->debug_dump)
@@ -692,14 +691,6 @@ int mtk_emimpu_init_region(
 	unsigned int size;
 	unsigned int i;
 
-	if (rg_info) {
-		rg_info->start = 0;
-		rg_info->end = 0;
-		rg_info->rg_num = rg_num;
-		rg_info->lock = false;
-		rg_info->apc = NULL;
-	}
-
 	if (!emimpu_pdev)
 		return -1;
 
@@ -710,6 +701,11 @@ int mtk_emimpu_init_region(
 		pr_info("%s: fail, out-of-range region\n", __func__);
 		return -1;
 	}
+
+	rg_info->start = 0;
+	rg_info->end = 0;
+	rg_info->rg_num = rg_num;
+	rg_info->lock = false;
 
 	size = sizeof(unsigned int) * emimpu_dev_ptr->domain_cnt;
 	rg_info->apc = kmalloc(size, GFP_KERNEL);
@@ -730,11 +726,8 @@ EXPORT_SYMBOL(mtk_emimpu_init_region);
  */
 int mtk_emimpu_free_region(struct emimpu_region_t *rg_info)
 {
-	if (rg_info && rg_info->apc) {
-		kfree(rg_info->apc);
-		return 0;
-	} else
-		return -EINVAL;
+	kfree(rg_info->apc);
+	return 0;
 }
 EXPORT_SYMBOL(mtk_emimpu_free_region);
 

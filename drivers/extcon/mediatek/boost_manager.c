@@ -26,6 +26,11 @@
 #include <linux/alarmtimer.h>
 #endif
 
+#ifdef CONFIG_BATTERY_SAMSUNG
+#include <dt-bindings/battery/sec-battery.h>
+#include <linux/power_supply.h>
+#endif
+
 struct usbotg_boost {
 	struct platform_device *pdev;
 	struct charger_device *primary_charger;
@@ -110,6 +115,11 @@ int usb_otg_set_vbus(int is_on)
 
 		return 0;
 	}
+#if defined(CONFIG_BATTERY_SAMSUNG)
+	struct power_supply *psy = power_supply_get_by_name("battery");
+	union power_supply_propval val;
+	int ret = 0;
+#endif
 
 	if (!g_info)
 		return -1;
@@ -121,6 +131,16 @@ int usb_otg_set_vbus(int is_on)
 			1500000);
 		charger_dev_kick_wdt(g_info->primary_charger);
 		enable_boost_polling(true);
+#if defined(CONFIG_BATTERY_SAMSUNG)
+			val.intval = SEC_BATTERY_CABLE_OTG;
+
+			ret = power_supply_set_property(psy,
+					POWER_SUPPLY_PROP_ONLINE, &val);
+			if (ret < 0) {
+				pr_err("%s: Fail to set POWER_SUPPLY_PROP_ONLINE (%d)\n",
+					__func__, ret);
+			}
+#endif
 	} else {
 		charger_dev_enable_otg(g_info->primary_charger, false);
 		enable_boost_polling(false);

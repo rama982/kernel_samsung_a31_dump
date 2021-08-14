@@ -64,11 +64,33 @@ static char *dmabuffs_dname(struct dentry *dentry, char *buffer, int buflen)
 			     dentry->d_name.name, ret > 0 ? name : "");
 }
 
-static void dma_buf_release(struct dentry *dentry)
+static const struct dentry_operations dma_buf_dentry_ops = {
+	.d_dname = dmabuffs_dname,
+};
+
+static struct vfsmount *dma_buf_mnt;
+
+static struct dentry *dma_buf_fs_mount(struct file_system_type *fs_type,
+		int flags, const char *name, void *data)
+{
+	return mount_pseudo(fs_type, "dmabuf:", NULL, &dma_buf_dentry_ops,
+			DMA_BUF_MAGIC);
+}
+
+static struct file_system_type dma_buf_fs_type = {
+	.name = "dmabuf",
+	.mount = dma_buf_fs_mount,
+	.kill_sb = kill_anon_super,
+};
+
+static int dma_buf_release(struct inode *inode, struct file *file)
 {
 	struct dma_buf *dmabuf;
 
-	dmabuf = dentry->d_fsdata;
+	if (!is_dma_buf_file(file))
+		return -EINVAL;
+
+	dmabuf = file->private_data;
 
 	BUG_ON(dmabuf->vmapping_counter);
 
@@ -93,27 +115,8 @@ static void dma_buf_release(struct dentry *dentry)
 
 	module_put(dmabuf->owner);
 	kfree(dmabuf);
+	return 0;
 }
-
-static const struct dentry_operations dma_buf_dentry_ops = {
-	.d_dname = dmabuffs_dname,
-	.d_release = dma_buf_release,
-};
-
-static struct vfsmount *dma_buf_mnt;
-
-static struct dentry *dma_buf_fs_mount(struct file_system_type *fs_type,
-		int flags, const char *name, void *data)
-{
-	return mount_pseudo(fs_type, "dmabuf:", NULL, &dma_buf_dentry_ops,
-			DMA_BUF_MAGIC);
-}
-
-static struct file_system_type dma_buf_fs_type = {
-	.name = "dmabuf",
-	.mount = dma_buf_fs_mount,
-	.kill_sb = kill_anon_super,
-};
 
 static int dma_buf_mmap_internal(struct file *file, struct vm_area_struct *vma)
 {
@@ -411,6 +414,7 @@ static void dma_buf_show_fdinfo(struct seq_file *m, struct file *file)
 }
 
 static const struct file_operations dma_buf_fops = {
+	.release	= dma_buf_release,
 	.mmap		= dma_buf_mmap_internal,
 	.llseek		= dma_buf_llseek,
 	.poll		= dma_buf_poll,
@@ -1204,7 +1208,6 @@ static int dma_buf_debug_show(struct seq_file *s, void *unused)
 	int count = 0, attach_count, shared_count, i;
 	size_t size = 0;
 
-	kasan_disable_current();
 	ret = mutex_lock_interruptible(&db_list.lock);
 
 	if (ret)
@@ -1223,19 +1226,13 @@ static int dma_buf_debug_show(struct seq_file *s, void *unused)
 			continue;
 		}
 
-	/*
-	 *  buf_obj->file is freed by fput(), because dma_buf_release() is moved to
-	 *  dentry_ops, so this part will lead use-after-free issue.
-	 */
-	/*
-	 *	seq_printf(s, "%08zu\t%08x\t%08x\t%08ld\t%s\t%08lu\t%s\n",
-	 *                      buf_obj->size,
-	 *                      buf_obj->file->f_flags, buf_obj->file->f_mode,
-	 *                      file_count(buf_obj->file),
-	 *                      buf_obj->exp_name,
-	 *                      file_inode(buf_obj->file)->i_ino,
-	 *                      buf_obj->name ?: "");
-	 */
+		seq_printf(s, "%08zu\t%08x\t%08x\t%08ld\t%s\t%08lu\t%s\n",
+				buf_obj->size,
+				buf_obj->file->f_flags, buf_obj->file->f_mode,
+				file_count(buf_obj->file),
+				buf_obj->exp_name,
+				file_inode(buf_obj->file)->i_ino,
+				buf_obj->name ?: "");
 
 		robj = buf_obj->resv;
 		while (true) {
@@ -1285,7 +1282,6 @@ static int dma_buf_debug_show(struct seq_file *s, void *unused)
 	seq_printf(s, "\nTotal %d objects, %zu bytes\n", count, size);
 
 	mutex_unlock(&db_list.lock);
-	kasan_enable_current();
 	return 0;
 }
 

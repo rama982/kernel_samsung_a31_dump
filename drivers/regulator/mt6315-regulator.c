@@ -14,6 +14,9 @@
 #include <linux/regulator/mt6315-misc.h>
 #include <linux/regulator/mt6315-regulator.h>
 #include <linux/regulator/of_regulator.h>
+#ifdef CONFIG_SEC_PM
+#include <linux/wakeup_reason.h>
+#endif
 
 #define MT6315_REG_WIDTH		8
 
@@ -182,6 +185,9 @@ static irqreturn_t mt6315_irq_handler(int irq, void *data)
 			"Reg[0x%x]=0x%x,hwirq=%d,type=%d\n",
 			irq_data->sta_reg, int_status, hwirq,
 			irq_get_trigger_type(virq));
+#ifdef CONFIG_SEC_PM
+		log_threaded_irq_wakeup_reason(virq, chip->irq);
+#endif
 		if (virq)
 			handle_nested_irq(virq);
 	}
@@ -486,31 +492,22 @@ static const struct regulator_ops mt6315_volt_range_ops = {
 
 /* The array is indexed by id(MT6315_ID_SID_XXX) */
 static struct mt6315_regulator_info mt6315_6_regulators[] = {
-#if defined(CONFIG_MACH_MT6893)
-	MT_BUCK("6_vbuck1", 6_VBUCK1, 300000, 1193750, 6250,
-		mt_volt_range1, 1, MT_BUCK_VOL_EN_MODE, 0xF),
-#else
 	MT_BUCK("6_vbuck1", 6_VBUCK1, 300000, 1193750, 6250,
 		mt_volt_range1, 1, MT_BUCK_VOL_EN_MODE, 0xB),
-#endif
 	MT_BUCK("6_vbuck3", 6_VBUCK3, 300000, 1193750, 6250,
 		mt_volt_range1, 3, MT_BUCK_VOL_EN_MODE, 0x4),
 };
 
 static struct mt6315_regulator_info mt6315_7_regulators[] = {
-#if defined(CONFIG_MACH_MT6885)
+#if defined(CONFIG_MACH_MT6885) || defined(CONFIG_MACH_MT6893)
 	MT_BUCK("7_vbuck1", 7_VBUCK1, 300000, 1193750, 6250,
 		mt_volt_range1, 1, MT_BUCK_VOL_EN_MODE, 0xB),
-#elif defined(CONFIG_MACH_MT6873) || defined(CONFIG_MACH_MT6893)
+#elif defined(CONFIG_MACH_MT6873)
 	MT_BUCK("7_vbuck1", 7_VBUCK1, 300000, 1193750, 6250,
 		mt_volt_range1, 1, MT_BUCK_VOL_EN_MODE, 0x3),
 #endif
 	MT_BUCK("7_vbuck3", 7_VBUCK3, 300000, 1193750, 6250,
 		mt_volt_range1, 3, MT_BUCK_VOL_EN, 0x4),
-#if defined(CONFIG_MACH_MT6893)
-	MT_BUCK("7_vbuck4", 7_VBUCK4, 300000, 1193750, 6250,
-		mt_volt_range1, 4, MT_BUCK_VOL_EN, 0x8),
-#endif
 };
 
 static struct mt6315_regulator_info mt6315_3_regulators[] = {
