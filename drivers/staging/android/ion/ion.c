@@ -45,6 +45,8 @@
 #include <linux/sched/task.h>
 #include <linux/sched/clock.h>
 #include <linux/delay.h>
+#include <linux/jiffies.h>
+#include <linux/sched/cputime.h>
 #include "ion.h"
 #include "ion_priv.h"
 #include "compat_ion.h"
@@ -56,6 +58,8 @@
 #ifdef CONFIG_MTK_IOMMU_V2
 #include <mach/pseudo_m4u.h>
 #endif
+
+#include <trace/systrace_mark.h>
 
 static atomic_long_t total_heap_bytes;
 
@@ -378,7 +382,6 @@ exit:
 	ion_buffer_add(dev, buffer);
 	mutex_unlock(&dev->buffer_lock);
 	atomic_long_add(len, &total_heap_bytes);
-	atomic_long_add(len, &heap->total_allocated);
 	return buffer;
 
 err1:
@@ -395,7 +398,6 @@ void ion_buffer_destroy(struct ion_buffer *buffer)
 		buffer->heap->ops->unmap_kernel(buffer->heap, buffer);
 	}
 
-	atomic_long_sub(buffer->size, &buffer->heap->total_allocated);
 	buffer->heap->ops->free(buffer);
 	vfree(buffer->pages);
 	kfree(buffer);
@@ -412,9 +414,7 @@ static void _ion_buffer_destroy(struct kref *kref)
 	mutex_unlock(&dev->buffer_lock);
 	atomic_long_sub(buffer->size, &total_heap_bytes);
 
-	if (unlikely(buffer->flags & ION_FLAG_FREE_WITHOUT_DEFER))
-		ion_buffer_destroy(buffer);
-	else if (heap->flags & ION_HEAP_FLAG_DEFER_FREE)
+	if (heap->flags & ION_HEAP_FLAG_DEFER_FREE)
 		ion_heap_freelist_add(heap, buffer);
 	else
 		ion_buffer_destroy(buffer);
@@ -664,7 +664,14 @@ struct ion_handle *ion_alloc(struct ion_client *client, size_t len,
 	int ret;
 	unsigned long long start, end;
 	unsigned int heap_mask = ~0;
+	unsigned long jiffies_s = jiffies;
+	u64 utime, stime_s, stime_e, stime_d;
+	static DEFINE_RATELIMIT_STATE(show_mem_ratelimit, HZ * 10, 1);
+#ifdef CONFIG_ION_RBIN_HEAP
+	bool rbin_try = false;
+#endif
 
+	task_cputime(current, &utime, &stime_s);
 	pr_debug("%s: len %zu align %zu heap_id_mask %u flags %x\n", __func__,
 		 len, align, heap_id_mask, flags);
 
@@ -673,6 +680,13 @@ struct ion_handle *ion_alloc(struct ion_client *client, size_t len,
 	 */
 	if (heap_id_mask == heap_mask)
 		heap_id_mask = ION_HEAP_MULTIMEDIA_MASK;
+
+#ifdef CONFIG_ION_RBIN_HEAP
+	if (heap_id_mask == ION_HEAP_CAMERA_MASK) {
+		rbin_try = true;
+		heap_id_mask = ION_HEAP_RBIN_MASK;
+	}
+#endif
 
 	/*
 	 * traverse the list of heaps available in this system in priority
@@ -699,14 +713,28 @@ struct ion_handle *ion_alloc(struct ion_client *client, size_t len,
 	start = sched_clock();
 
 	down_read(&dev->lock);
+#ifdef CONFIG_ION_RBIN_HEAP
+repeat:
+#endif
 	plist_for_each_entry(heap, &dev->heaps, node) {
 		/* if the caller didn't specify this heap id */
 		if (!((1 << heap->id) & heap_id_mask))
 			continue;
+		systrace_mark_begin("%s(%s, %zu, 0x%x, 0x%x)\n",
+			__func__, heap->name, len, heap_id_mask, flags);
 		buffer = ion_buffer_create(heap, dev, len, align, flags);
+		systrace_mark_end();
 		if (!IS_ERR(buffer))
 			break;
 	}
+
+#ifdef CONFIG_ION_RBIN_HEAP
+	if (rbin_try && (!buffer || IS_ERR(buffer))) {
+		rbin_try = false;
+		heap_id_mask = ION_HEAP_CAMERA_MASK;
+		goto repeat;
+	}
+#endif
 	up_read(&dev->lock);
 
 	if (!buffer) {
@@ -762,6 +790,16 @@ struct ion_handle *ion_alloc(struct ion_client *client, size_t len,
 	do_div(handle->dbg.user_ts, 1000000);
 	memcpy(buffer->alloc_dbg, client->dbg_name, ION_MM_DBG_NAME_LEN);
 
+	task_cputime(current, &utime, &stime_e);
+	stime_d = stime_e - stime_s;
+	if (!IS_ERR(handle) && stime_d / NSEC_PER_MSEC > 100) {
+		pr_info("%s ion_heap_id: %d mask=0x%x timeJS(ms):%u/%llu len:0x%zx",
+			__func__, heap->id, heap_id_mask,
+			jiffies_to_msecs(jiffies - jiffies_s),
+			stime_d / NSEC_PER_MSEC, len);
+		if (__ratelimit(&show_mem_ratelimit))
+			show_mem(0, NULL);
+	}
 	return handle;
 }
 EXPORT_SYMBOL(ion_alloc);
@@ -1249,7 +1287,8 @@ static int ion_iommu_heap_type(struct ion_buffer *buffer)
 
 	if (buffer->heap->type == (int)ION_HEAP_TYPE_FB ||
 	    buffer->heap->type == (int)ION_HEAP_TYPE_MULTIMEDIA ||
-	    buffer->heap->type == (int)ION_HEAP_TYPE_MULTIMEDIA_SEC) {
+	    buffer->heap->type == (int)ION_HEAP_TYPE_MULTIMEDIA_SEC ||
+	    buffer->heap->type == (int)ION_HEAP_TYPE_RBIN) {
 		return 1;
 	}
 	return 0;
@@ -1307,7 +1346,7 @@ static int ion_dma_buf_attach(struct dma_buf *dmabuf, struct device *dev,
 			      struct dma_buf_attachment *attachment)
 {
 	struct ion_dma_buf_attachment *a;
-	struct sg_table *table = NULL;
+	struct sg_table *table;
 	struct ion_buffer *buffer;
 
 	if (!attachment) {
@@ -1331,12 +1370,7 @@ static int ion_dma_buf_attach(struct dma_buf *dmabuf, struct device *dev,
 	if (!a)
 		return -ENOMEM;
 
-#ifdef CONFIG_MTK_IOMMU_V2
-	if (buffer->sg_table_orig)
-		table = dup_sg_table(buffer->sg_table_orig);
-#endif
-	if (!table)
-		table = dup_sg_table(buffer->sg_table);
+	table = dup_sg_table(buffer->sg_table);
 	if (IS_ERR(table)) {
 		kfree(a);
 		return -ENOMEM;
@@ -1382,10 +1416,10 @@ static void ion_dma_buf_detatch(struct dma_buf *dmabuf,
 		return;
 	}
 
+	free_duped_table(a->table);
 	mutex_lock(&buffer->lock);
 	list_del(&a->list);
 	mutex_unlock(&buffer->lock);
-	free_duped_table(a->table);
 
     //pr_notice("%s, %d\n", __func__, __LINE__);
 	kfree(a);
@@ -1731,7 +1765,7 @@ static int ion_dma_buf_begin_cpu_access(struct dma_buf *dmabuf,
 	}
 	if (ion_iommu_heap_type(buffer) ||
 	    buffer->heap->type == (int)ION_HEAP_TYPE_SYSTEM) {
-		IONDBG("%s iommu device, to cache sync\n", __func__);
+		IONMSG("%s iommu device, to cache sync\n", __func__);
 
 		mutex_lock(&buffer->lock);
 		list_for_each_entry(a, &buffer->attachments, list) {
@@ -1760,7 +1794,7 @@ static int ion_dma_buf_end_cpu_access(struct dma_buf *dmabuf,
 
 	if (ion_iommu_heap_type(buffer) ||
 	    buffer->heap->type == (int)ION_HEAP_TYPE_SYSTEM) {
-		IONDBG("%s iommu device, to cache sync\n", __func__);
+		IONMSG("%s iommu device, to cache sync\n", __func__);
 
 		mutex_lock(&buffer->lock);
 		list_for_each_entry(a, &buffer->attachments, list) {
