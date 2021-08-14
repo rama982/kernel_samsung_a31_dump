@@ -29,8 +29,6 @@
 #include "mach/pseudo_m4u.h"
 #endif
 
-#include "swpm_me.h"
-
 #if DEC_DVFS
 #include <linux/pm_qos.h>
 #include <mmdvfs_pmqos.h>
@@ -145,8 +143,6 @@ void mtk_vcodec_dec_clock_on(struct mtk_vcodec_pm *pm, int hw_id)
 	ret = clk_prepare_enable(pm->clk_MT_CG_VDEC);
 	if (ret)
 		mtk_v4l2_err("clk_prepare_enable CG_VDEC fail %d", ret);
-
-	set_swpm_vdec_active(true);
 #endif
 
 #ifdef CONFIG_MTK_PSEUDO_M4U
@@ -184,7 +180,6 @@ void mtk_vcodec_dec_clock_off(struct mtk_vcodec_pm *pm, int hw_id)
 	dev = container_of(pm, struct mtk_vcodec_dev, pm);
 	mtk_vdec_hw_break(dev, hw_id);
 
-	set_swpm_vdec_active(false);
 	clk_disable_unprepare(pm->clk_MT_CG_VDEC);
 	smi_bus_disable_unprepare(SMI_LARB4, "VDEC");
 #endif
@@ -444,9 +439,9 @@ void mtk_vdec_emi_bw_begin(struct mtk_vcodec_ctx *ctx)
 		mm_qos_set_request(&vdec_ufo_enc, emi_bw_output, 0,
 					BW_COMP_DEFAULT);
 	} else {
-		mm_qos_set_request(&vdec_mc, emi_bw, 0, BW_COMP_NONE);
 		mm_qos_set_request(&vdec_pp, emi_bw_output, 0, BW_COMP_NONE);
 	}
+	mm_qos_set_request(&vdec_mc, emi_bw, 0, BW_COMP_NONE);
 	mm_qos_set_request(&vdec_pred_rd, 1, 0, BW_COMP_NONE);
 	mm_qos_set_request(&vdec_pred_wr, 1, 0, BW_COMP_NONE);
 	mm_qos_set_request(&vdec_ppwrap, 0, 0, BW_COMP_NONE);

@@ -391,8 +391,9 @@ int vcu_ipi_send(struct platform_device *pdev,
 	struct mtk_vcu *vcu = platform_get_drvdata(pdev);
 	struct vcu_ipi_desc *ipi_desc;
 	struct share_obj send_obj;
-	unsigned long timeout;
+	unsigned long timeout, trylocktime;
 	int ret;
+	int status;
 
 	if (id <= IPI_VCU_INIT || id >= IPI_MAX ||
 	    len > sizeof(send_obj.share_buf) || buf == NULL) {
@@ -407,17 +408,51 @@ int vcu_ipi_send(struct platform_device *pdev,
 
 	i = ipi_id_to_inst_id(id);
 
-	mutex_lock(&vcu->vcu_mutex[i]);
-	if (vcu_ptr->abort) {
-		if (vcu_ptr->open_cnt > 0) {
-			dev_info(vcu->dev, "wait for vpud killed %d\n",
-				vcu_ptr->vpud_killed.count);
-			ret = down_interruptible(&vcu_ptr->vpud_killed);
+	time_check_start();
+	do {
+		status = mutex_trylock(&vcu->vcu_mutex[i]);
+		time_ms_e = jiffies_to_msecs(jiffies);
+		if (status) {
+			trylocktime = time_ms_e - time_ms_s;
+			if (time_ms_e - time_ms_s >= IPI_TIMEOUT_MS) {
+				dev_info(&pdev->dev,
+					"[VCU] failed to get vcu_mutex on time\n");
+				mutex_unlock(&vcu->vcu_mutex[i]);
+				if (!vcu_ptr->abort) {
+					send_sig(SIGTERM, vcud_task, 0);
+					send_sig(SIGKILL, vcud_task, 0);
+				}
+				if (vcu_ptr->open_cnt > 0) {
+					dev_info(vcu->dev,
+						"wait for vpud killed %d\n",
+						vcu_ptr->vpud_killed.count);
+					ret =
+					down_interruptible(&vcu_ptr->vpud_killed);
+				}
+				dev_info(&pdev->dev, "[VCU] vpud killed\n");
+				ret = -EIO;
+				goto end;
+			}
+			break;
+		} else if (time_ms_e - time_ms_s >= IPI_TIMEOUT_MS) {
+			dev_info(&pdev->dev,
+				"[VCU] failed to get vcu_mutex\n");
+			if (!vcu_ptr->abort) {
+				send_sig(SIGTERM, vcud_task, 0);
+				send_sig(SIGKILL, vcud_task, 0);
+			}
+			if (vcu_ptr->open_cnt > 0) {
+				dev_info(vcu->dev, "wait for vpud killed %d\n",
+					vcu_ptr->vpud_killed.count);
+				ret = down_interruptible(&vcu_ptr->vpud_killed);
+			}
+			dev_info(&pdev->dev, "[VCU] vpud killed\n");
+			ret = -EIO;
+			goto end;
 		}
-		dev_info(&pdev->dev, "[VCU] vpud killed\n");
-		mutex_unlock(&vcu->vcu_mutex[i]);
-		return -EIO;
-	}
+		usleep_range(1000, 2000);
+	} while (!status);
+
 	vcu->ipi_id_ack[id] = false;
 
 	if (id >= IPI_VCU_INIT && id < IPI_MAX) {
@@ -434,17 +469,15 @@ int vcu_ipi_send(struct platform_device *pdev,
 	wake_up(&vcu->get_wq[i]);
 
 	/* wait for VCU's ACK */
-	timeout = msecs_to_jiffies(IPI_TIMEOUT_MS);
+	timeout = msecs_to_jiffies(IPI_TIMEOUT_MS - trylocktime);
 	ret = wait_event_timeout(vcu->ack_wq[i], vcu->ipi_id_ack[id], timeout);
 	vcu->ipi_id_ack[id] = false;
 
 	if (vcu_ptr->abort || ret == 0) {
 		dev_info(&pdev->dev, "vcu ipi %d ack time out !%d", id, ret);
 		if (!vcu_ptr->abort) {
-			task_lock(vcud_task);
 			send_sig(SIGTERM, vcud_task, 0);
 			send_sig(SIGKILL, vcud_task, 0);
-			task_unlock(vcud_task);
 		}
 		if (vcu_ptr->open_cnt > 0) {
 			dev_info(vcu->dev, "wait for vpud killed %d\n",
@@ -1007,17 +1040,15 @@ static int vcu_gce_cmd_flush(struct mtk_vcu *vcu,
 		(buff.cmdq_buff.secure == 0)?vcu_gce_timeout_callback:NULL;
 	pkt_ptr->err_cb.data = (void *)&vcu_ptr->gce_info[j].buff[i];
 
-	pr_info("[VCU][%d] %s: buff %p type %d cnt %d order %d pkt %p hndl %llx %d %d\n",
+	pr_info("[VCU][%d] %s: buff %p type %d cnt %d order %d hndl %llx %d %d\n",
 		core_id, __func__, &vcu_ptr->gce_info[j].buff[i],
 		buff.cmdq_buff.codec_type,
-		cmds->cmd_cnt, buff.cmdq_buff.flush_order, pkt_ptr,
+		cmds->cmd_cnt, buff.cmdq_buff.flush_order,
 		buff.cmdq_buff.gce_handle, ret, j);
 
 	/* flush cmd async */
-	ret = cmdq_pkt_flush_threaded(pkt_ptr,
+	cmdq_pkt_flush_threaded(pkt_ptr,
 		vcu_gce_flush_callback, (void *)&vcu_ptr->gce_info[j].buff[i]);
-	if (ret < 0)
-		pr_info("[VCU] cmdq flush fail pkt %p\n", pkt_ptr);
 
 	atomic_inc(&vcu_ptr->gce_info[j].flush_pending);
 	time_check_end(100, strlen(vcodec_param_string));
@@ -1253,6 +1284,40 @@ void vcu_put_file_lock(void)
 	mutex_unlock(&vpud_file_mutex);
 }
 EXPORT_SYMBOL_GPL(vcu_put_file_lock);
+
+void vcu_get_gce_lock(struct platform_device *pdev, unsigned long codec_type)
+{
+	struct mtk_vcu *vcu = NULL;
+
+	if (pdev == NULL) {
+		pr_info("[VCU] %s platform device is null.\n", __func__);
+		return;
+	}
+	if (codec_type >= VCU_CODEC_MAX) {
+		pr_info("[VCU] %s invalid codec type %d.\n", __func__, codec_type);
+		return;
+	}
+	vcu = platform_get_drvdata(pdev);
+	mutex_lock(&vcu->vcu_gce_mutex[codec_type]);
+}
+EXPORT_SYMBOL_GPL(vcu_get_gce_lock);
+
+void vcu_put_gce_lock(struct platform_device *pdev, unsigned long codec_type)
+{
+	struct mtk_vcu *vcu = NULL;
+
+	if (pdev == NULL) {
+		pr_info("[VCU] %s platform device is null.\n", __func__);
+		return;
+	}
+	if (codec_type >= VCU_CODEC_MAX) {
+		pr_info("[VCU] %s invalid codec type %d.\n", __func__, codec_type);
+		return;
+	}
+	vcu = platform_get_drvdata(pdev);
+	mutex_unlock(&vcu->vcu_gce_mutex[codec_type]);
+}
+EXPORT_SYMBOL_GPL(vcu_put_gce_lock);
 
 int vcu_get_sig_lock(unsigned long *flags)
 {
